@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
+*.log
+graphify-out/
+.DS_Store
+chroma/
+*.sqlite3
