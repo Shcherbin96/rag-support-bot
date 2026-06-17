@@ -1,0 +1,20 @@
+[project]
+name = "rag-support-bot"
+version = "0.1.0"
+description = "RAG-powered Telegram support assistant with citations, guardrails and eval"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=0.40",          # клиент Claude API — формулирует ответы
+    "chromadb>=0.5",            # векторная база — хранит «отпечатки» документов
+    "sentence-transformers>=3.0", # делает эмбеддинги (отпечатки текста), мультиязычные
+    "aiogram>=3.13",            # фреймворк для Telegram-бота
+    "python-dotenv>=1.0",       # читает ключи из .env
+    "pyyaml>=6.0",              # читает тест-сет eval (yaml)
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+# Это не библиотека для установки, а приложение — пусть uv ставит только зависимости
+[tool.uv]
+package = false
