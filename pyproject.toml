@@ -18,3 +18,7 @@ dev = ["pytest>=8.0"]
 # Это не библиотека для установки, а приложение — пусть uv ставит только зависимости
 [tool.uv]
 package = false
+
+# Чтобы pytest видел пакет rag_bot из корня проекта
+[tool.pytest.ini_options]
+pythonpath = ["."]
