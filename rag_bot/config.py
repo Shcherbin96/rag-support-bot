@@ -18,7 +18,11 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
 # --- Модель для ответа (Google Gemini через OpenAI-совместимый эндпоинт) ---
 LLM_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-ANSWER_MODEL = "gemini-2.5-flash"   # быстрая и бесплатная; для сравнения позже добавим flash-lite/pro
+# Модель по умолчанию — выбрана по eval (13/13, 0 галлюцинаций, самая лёгкая/быстрая на free)
+ANSWER_MODEL = "gemini-2.5-flash-lite"
+
+# Модели для сравнения в eval (pro на бесплатном тарифе почти без квоты — не берём)
+EVAL_MODELS = ["gemini-2.5-flash-lite", "gemini-2.5-flash"]
 
 # --- Модель эмбеддингов (локальная, бесплатная) ---
 # Превращает текст в «числовой отпечаток». Мультиязычная — понимает русский.

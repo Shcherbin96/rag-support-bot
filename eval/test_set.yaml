@@ -1,0 +1,74 @@
+# Тест-сет для eval. Три типа кейсов:
+#   grounded  — ответ есть в базе: проверяем нужный источник + ключевой факт
+#   refuse    — факта НЕТ в базе: бот обязан честно отказаться (0 галлюцинаций)
+#   smalltalk — приветствие/болтовня: бот НЕ должен отказывать
+
+- id: delivery_price
+  type: grounded
+  question: "Сколько стоит доставка?"
+  expect_source: dostavka
+  expect_keyword: "350"
+
+- id: free_delivery
+  type: grounded
+  question: "С какой суммы доставка бесплатная?"
+  expect_source: dostavka
+  expect_keyword: "4000"
+
+- id: return_period
+  type: grounded
+  question: "Сколько дней даётся на возврат товара?"
+  expect_source: vozvrat
+  expect_keyword: "14"
+
+- id: payment_methods
+  type: grounded
+  question: "Какими способами можно оплатить заказ?"
+  expect_source: oplata
+  expect_keyword: "СБП"
+
+- id: warranty_tech
+  type: grounded
+  question: "Какая гарантия на бытовую технику?"
+  expect_source: garantiya
+  expect_keyword: "12"
+
+- id: cashback
+  type: grounded
+  question: "Сколько процентов кэшбэка по бонусной программе?"
+  expect_source: bonusnaya
+  expect_keyword: "5"
+
+- id: welcome_promo
+  type: grounded
+  question: "Есть ли скидка для новых покупателей?"
+  expect_source: aktsii
+  expect_keyword: "WELCOME"
+
+- id: support_hours
+  type: grounded
+  question: "В какое время работает поддержка?"
+  expect_source: kontakty
+  expect_keyword: "21"
+
+- id: abroad_delivery
+  type: grounded
+  question: "Доставляете ли вы за границу?"
+  expect_source: faq
+  expect_keyword: "России"
+
+- id: unknown_warehouse
+  type: refuse
+  question: "Во сколько закрывается ваш склад в Казани?"
+
+- id: unknown_revenue
+  type: refuse
+  question: "Какой у вас был оборот за 2025 год?"
+
+- id: greeting
+  type: smalltalk
+  question: "Привет! Кто ты?"
+
+- id: thanks
+  type: smalltalk
+  question: "Спасибо большое!"
