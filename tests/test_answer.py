@@ -5,7 +5,7 @@ from rag_bot import config
 from rag_bot.answer import answer
 
 needs_key = pytest.mark.skipif(
-    not config.NVIDIA_API_KEY, reason="нужен NVIDIA_API_KEY в .env"
+    not config.LLM_API_KEY, reason="нужен GEMINI_API_KEY в .env"
 )
 
 

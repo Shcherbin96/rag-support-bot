@@ -12,14 +12,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- Ключи доступа (берутся из .env, в код не вписываем) ---
-NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY", "")
+# Имена провайдер-нейтральные: сменить провайдера = поменять эти 3 строки, код не трогаем.
+LLM_API_KEY = os.getenv("GEMINI_API_KEY", "")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
-# --- Модель для ответа (NVIDIA NIM) ---
-# NVIDIA NIM — OpenAI-совместимый API. Используем клиент openai с этим base_url.
-NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
-# Модель из каталога build.nvidia.com. Можно сменить на любую доступную там.
-ANSWER_MODEL = "nvidia/llama-3.1-nemotron-70b-instruct"
+# --- Модель для ответа (Google Gemini через OpenAI-совместимый эндпоинт) ---
+LLM_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+ANSWER_MODEL = "gemini-2.5-flash"   # быстрая и бесплатная; для сравнения позже добавим flash-lite/pro
 
 # --- Модель эмбеддингов (локальная, бесплатная) ---
 # Превращает текст в «числовой отпечаток». Мультиязычная — понимает русский.

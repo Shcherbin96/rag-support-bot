@@ -21,8 +21,8 @@ SYSTEM_PROMPT = (
 
 
 def _client() -> OpenAI:
-    # Стандартный клиент OpenAI, но base_url указывает на серверы NVIDIA
-    return OpenAI(api_key=config.NVIDIA_API_KEY, base_url=config.NVIDIA_BASE_URL)
+    # Стандартный клиент OpenAI, но base_url указывает на провайдера из config (сейчас Gemini)
+    return OpenAI(api_key=config.LLM_API_KEY, base_url=config.LLM_BASE_URL)
 
 
 def answer(query: str, k: int = config.TOP_K) -> dict:
