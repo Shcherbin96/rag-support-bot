@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "RAG-powered Telegram support assistant with citations, guardrails and eval"
 requires-python = ">=3.12"
 dependencies = [
-    "anthropic>=0.40",          # клиент Claude API — формулирует ответы
+    "openai>=1.50",             # OpenAI-совместимый клиент — ходим в NVIDIA NIM
     "chromadb>=0.5",            # векторная база — хранит «отпечатки» документов
     "sentence-transformers>=3.0", # делает эмбеддинги (отпечатки текста), мультиязычные
     "aiogram>=3.13",            # фреймворк для Telegram-бота
