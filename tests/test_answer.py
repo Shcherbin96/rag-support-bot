@@ -18,8 +18,12 @@ def test_grounded_answer_has_correct_source():
 
 
 @needs_key
-def test_out_of_base_question_is_refused():
-    """Вопрос ВНЕ базы → guardrail: бот честно отказывается, не выдумывает."""
-    res = answer("вы продаёте автомобили Tesla?")
+def test_unknown_fact_is_refused():
+    """Факт, которого НЕТ в базе → guardrail: честный отказ, без выдумки.
+
+    Важно: «out-of-scope» (Tesla) бот может корректно отвергнуть по рамке магазина.
+    Здесь проверяем «out-of-base» — конкретный факт, которого в базе нет.
+    """
+    res = answer("во сколько закрывается ваш склад в Казани?")
     low = res["text"].lower()
-    assert any(w in low for w in ["не зна", "не наш", "уточн", "менеджер"])
+    assert any(w in low for w in ["не зна", "нет информ", "не наш", "уточн", "менеджер"])
