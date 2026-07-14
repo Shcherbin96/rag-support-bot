@@ -6,6 +6,7 @@ Run:
 """
 
 import os
+import subprocess
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -28,18 +29,31 @@ REFUSAL_MARKERS = [
 ]
 TEST_SET = Path(__file__).parent / "test_set.yaml"
 RESULTS = Path(__file__).parent / "results.md"
+PER_CASE_RESULTS = Path(__file__).parent / "case_results.md"
+
+
+def _current_commit() -> str:
+    """Return CI SHA when available, otherwise the local Git commit."""
+    if os.getenv("GITHUB_SHA"):
+        return os.environ["GITHUB_SHA"]
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
+        ).strip()
+    except Exception:
+        return "unknown"
 
 
 def _answer_with_retry(question: str, model: str, retries: int = 3) -> dict:
-    """Call answer() with retry/backoff for temporary rate-limit errors."""
+    """Call answer() with retry/backoff for temporary provider errors."""
+    result: dict | None = None
     for attempt in range(retries):
-        try:
-            return answer(question, model=model)
-        except Exception as exc:
-            if "429" in str(exc) and attempt < retries - 1:
-                time.sleep(20 * (attempt + 1))
-                continue
-            raise
+        result = answer(question, model=model)
+        if result.get("error_type") == "provider_error" and attempt < retries - 1:
+            time.sleep(20 * (attempt + 1))
+            continue
+        return result
+    return result or {"text": "<ERROR: no result>", "sources": [], "route": "error", "error_type": "runtime_error"}
 
 
 def is_refusal(text: str) -> bool:
@@ -48,6 +62,9 @@ def is_refusal(text: str) -> bool:
 
 
 def score(case: dict, result: dict) -> bool:
+    if result.get("error_type"):
+        return False
+
     case_type = case["type"]
     text = result["text"]
     if case_type == "grounded":
@@ -69,21 +86,24 @@ def eval_model(model: str, cases: list[dict]) -> dict:
     for case in cases:
         case_type = case["type"]
         by_type[case_type][1] += 1
+        started = time.perf_counter()
         try:
-            started = time.perf_counter()
             result = _answer_with_retry(case["question"], model)
             latencies.append(time.perf_counter() - started)
+            error_type = result.get("error_type", "")
+            if error_type:
+                errors += 1
             ok = score(case, result)
-            error = ""
+            error = error_type
         except Exception as exc:
             errors += 1
             ok = False
-            error = str(exc)
-            result = {"text": f"<ERROR: {exc}>", "sources": [], "route": "error"}
+            error = f"runtime_exception: {exc}"
+            result = {"text": f"<ERROR: {exc}>", "sources": [], "route": "error", "error_type": "runtime_exception"}
 
         if ok:
             by_type[case_type][0] += 1
-        elif case_type == "refuse" and not is_refusal(result["text"]):
+        elif case_type == "refuse" and not result.get("error_type") and not is_refusal(result["text"]):
             hallucinations += 1
 
         case_results.append(
@@ -116,19 +136,46 @@ def eval_model(model: str, cases: list[dict]) -> dict:
 
 
 def _summary_sentence(results: list[dict]) -> str:
+    total_passed = sum(result["passed"] for result in results)
+    total_cases = sum(result["total"] for result in results)
     total_hallucinations = sum(result["hallucinations"] for result in results)
     total_errors = sum(result["errors"] for result in results)
+
+    if total_passed < total_cases:
+        return (
+            f"This eval run passed {total_passed}/{total_cases} cases, with "
+            f"{total_hallucinations} hallucination(s) and {total_errors} runtime/model error(s). "
+            "Do not use it as a quality claim until failures are investigated."
+        )
     if total_hallucinations == 0 and total_errors == 0:
-        return "No hallucinations or runtime errors were observed in this eval run."
+        return f"All {total_cases} cases passed with no observed hallucinations or runtime/model errors."
     return (
-        f"This eval run observed {total_hallucinations} hallucination(s) "
-        f"and {total_errors} runtime error(s); investigate before using the result as a quality claim."
+        f"All cases passed, but the run observed {total_hallucinations} hallucination(s) "
+        f"and {total_errors} runtime/model error(s); investigate before using the result as a quality claim."
     )
+
+
+def _case_results_table(rows: list[dict]) -> str:
+    lines = [
+        "| Model | Case | Type | OK | Route | Sources | Error |",
+        "|---|---|---|---:|---|---|---|",
+    ]
+    for model_result in rows:
+        for case in model_result["cases"]:
+            sources = ", ".join(case["sources"]) or "—"
+            error = case["error"] or "—"
+            lines.append(
+                f"| {model_result['model']} | {case['id']} | {case['type']} | "
+                f"{case['ok']} | {case['route']} | {sources} | {error} |"
+            )
+    return "\n".join(lines)
 
 
 def main() -> None:
     cases = yaml.safe_load(TEST_SET.read_text(encoding="utf-8"))
     print(f"Cases: {len(cases)} · models: {len(config.EVAL_MODELS)}\n")
+    if not config.LLM_API_KEY:
+        print("Warning: GEMINI_API_KEY is not set. Factual LLM-backed cases are expected to fail as provider_error.\n")
 
     rows = []
     for model in config.EVAL_MODELS:
@@ -156,7 +203,7 @@ def main() -> None:
     print("\n" + table)
 
     timestamp = datetime.now(UTC).isoformat(timespec="seconds")
-    commit = os.getenv("GITHUB_SHA", "local-run")
+    commit = _current_commit()
     RESULTS.write_text(
         "# Evaluation Results\n\n"
         f"Generated at: `{timestamp}`\n\n"
@@ -165,10 +212,12 @@ def main() -> None:
         f"Test set: {len(cases)} cases (grounded / refuse / small-talk).\n\n"
         + table
         + "\n\n"
-        + f"**Conclusion:** {_summary_sentence(rows)}\n",
+        + f"**Conclusion:** {_summary_sentence(rows)}\n\n"
+        + f"Per-case details: [`case_results.md`](case_results.md)\n",
         encoding="utf-8",
     )
-    print(f"\nSaved to {RESULTS}")
+    PER_CASE_RESULTS.write_text("# Per-case Evaluation Results\n\n" + _case_results_table(rows) + "\n", encoding="utf-8")
+    print(f"\nSaved to {RESULTS} and {PER_CASE_RESULTS}")
 
 
 if __name__ == "__main__":

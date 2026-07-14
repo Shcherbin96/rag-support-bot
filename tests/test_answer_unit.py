@@ -46,12 +46,33 @@ def test_smalltalk_is_handled_before_retrieval(monkeypatch):
     assert "ДомОк" in result["text"]
 
 
+def test_mixed_greeting_and_question_uses_retrieval(monkeypatch):
+    chunks = [
+        {"id": "chunk-1", "source": "dostavka.md", "distance": 0.2, "text": "Доставка стоит 350 рублей."},
+    ]
+    payload = {
+        "answer": "Доставка стоит 350 рублей.",
+        "citations": [{"chunk_id": "chunk-1", "quote": "Доставка стоит 350 рублей."}],
+    }
+
+    monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
+    monkeypatch.setattr(answer_module, "_client", lambda: _FakeClient(json.dumps(payload)))
+
+    result = answer("Привет, сколько стоит доставка?")
+
+    assert result["route"] == "factual_in_domain"
+    assert result["sources"] == ["dostavka.md"]
+
+
 def test_answer_uses_only_validated_cited_sources(monkeypatch):
     chunks = [
         {"id": "chunk-1", "source": "dostavka.md", "distance": 0.2, "text": "Доставка стоит 350 рублей."},
         {"id": "chunk-2", "source": "oplata.md", "distance": 0.4, "text": "Оплата картой или СБП."},
     ]
-    payload = {"answer": "Доставка стоит 350 рублей.", "citations": ["chunk-1"]}
+    payload = {
+        "answer": "Доставка стоит 350 рублей.",
+        "citations": [{"chunk_id": "chunk-1", "quote": "Доставка стоит 350 рублей."}],
+    }
 
     monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
     monkeypatch.setattr(answer_module, "_client", lambda: _FakeClient(json.dumps(payload)))
@@ -61,13 +82,17 @@ def test_answer_uses_only_validated_cited_sources(monkeypatch):
     assert result["sources"] == ["dostavka.md"]
     assert "Источники: dostavka.md" in result["text"]
     assert "oplata.md" not in result["text"]
+    assert not result["error_type"]
 
 
 def test_invalid_model_citation_fails_closed(monkeypatch):
     chunks = [
         {"id": "chunk-1", "source": "dostavka.md", "distance": 0.2, "text": "Доставка стоит 350 рублей."},
     ]
-    payload = {"answer": "Доставка стоит 350 рублей.", "citations": ["not-retrieved"]}
+    payload = {
+        "answer": "Доставка стоит 350 рублей.",
+        "citations": [{"chunk_id": "not-retrieved", "quote": "Доставка стоит 350 рублей."}],
+    }
 
     monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
     monkeypatch.setattr(answer_module, "_client", lambda: _FakeClient(json.dumps(payload)))
@@ -75,4 +100,52 @@ def test_invalid_model_citation_fails_closed(monkeypatch):
     result = answer("Сколько стоит доставка?")
 
     assert result["sources"] == []
+    assert result["error_type"] == "model_contract_error"
     assert "не могу выдумывать" in result["text"]
+
+
+def test_answer_rejects_quote_not_present_in_cited_chunk(monkeypatch):
+    chunks = [
+        {"id": "chunk-1", "source": "dostavka.md", "distance": 0.2, "text": "Доставка стоит 350 рублей."},
+    ]
+    payload = {
+        "answer": "Доставка стоит 350 рублей.",
+        "citations": [{"chunk_id": "chunk-1", "quote": "Доставка стоит 99999 рублей."}],
+    }
+
+    monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
+    monkeypatch.setattr(answer_module, "_client", lambda: _FakeClient(json.dumps(payload)))
+
+    result = answer("Сколько стоит доставка?")
+
+    assert result["sources"] == []
+    assert result["error_type"] == "model_contract_error"
+
+
+def test_answer_rejects_numeric_claim_not_present_in_evidence(monkeypatch):
+    chunks = [
+        {"id": "chunk-1", "source": "dostavka.md", "distance": 0.2, "text": "Доставка стоит 350 рублей."},
+    ]
+    payload = {
+        "answer": "Доставка стоит 99999 рублей.",
+        "citations": [{"chunk_id": "chunk-1", "quote": "Доставка стоит 350 рублей."}],
+    }
+
+    monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
+    monkeypatch.setattr(answer_module, "_client", lambda: _FakeClient(json.dumps(payload)))
+
+    result = answer("Сколько стоит доставка?")
+
+    assert result["sources"] == []
+    assert result["error_type"] == "model_contract_error"
+
+
+def test_retrieval_exception_fails_closed(monkeypatch):
+    def broken_retrieve(*args, **kwargs):
+        raise RuntimeError("embedding backend failed")
+
+    monkeypatch.setattr(answer_module, "retrieve", broken_retrieve)
+    result = answer("Сколько стоит доставка?")
+
+    assert result["sources"] == []
+    assert result["error_type"] == "retrieval_error"
