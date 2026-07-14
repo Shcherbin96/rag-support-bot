@@ -1,6 +1,7 @@
 """Grounded answer generation for the RAG support assistant."""
 
 import json
+import re
 from json import JSONDecodeError
 
 from openai import OpenAI
@@ -36,6 +37,7 @@ OUT_OF_DOMAIN_TEXT = {
 }
 
 CITATION_HEADER = {"ru": "Источники", "en": "Sources"}
+_NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)?")
 
 
 def _client() -> OpenAI:
@@ -55,6 +57,11 @@ def _language(text: str) -> str:
 def _normalize_space(text: str) -> str:
     """Normalize whitespace for exact quote containment checks."""
     return " ".join(text.split()).casefold()
+
+
+def _numbers(text: str) -> set[str]:
+    """Extract normalized numeric claims from text."""
+    return {match.replace(",", ".") for match in _NUMBER_RE.findall(text)}
 
 
 def _error_result(language: str, route: QueryRoute | str, error_type: str, chunks: list[dict] | None = None) -> dict:
@@ -79,9 +86,10 @@ def _parse_model_response(raw_text: str, valid_chunks: dict[str, dict]) -> tuple
     """Parse and validate the model's structured answer payload.
 
     Validation is deliberately narrow: a citation must reference a retrieved chunk
-    and provide an exact evidence quote contained in that chunk. This does not
-    prove full natural-language entailment, but it prevents unsupported chunk-ID
-    membership claims from being treated as evidence.
+    and provide an exact evidence quote contained in that chunk. It also rejects
+    numeric claims in the answer when those numbers do not appear in cited quotes.
+    This is not full natural-language entailment, but it catches common factual
+    hallucinations such as unsupported prices, dates, and percentages.
     """
     text = raw_text.strip()
     if text.startswith("```"):
@@ -121,6 +129,12 @@ def _parse_model_response(raw_text: str, valid_chunks: dict[str, dict]) -> tuple
         if _normalize_space(quote) not in _normalize_space(valid_chunks[chunk_id]["text"]):
             raise ValueError(f"Citation quote is not present in cited chunk: {chunk_id}")
         validated.append({"chunk_id": chunk_id, "quote": quote})
+
+    answer_numbers = _numbers(answer_text)
+    evidence_numbers = _numbers(" ".join(citation["quote"] for citation in validated))
+    unsupported_numbers = answer_numbers - evidence_numbers
+    if unsupported_numbers:
+        raise ValueError(f"Answer contains numbers not present in cited evidence: {sorted(unsupported_numbers)}")
 
     return answer_text, validated
 
