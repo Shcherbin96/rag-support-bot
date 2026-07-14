@@ -2,7 +2,7 @@
 
 The report is generated from measured results instead of hard-coded claims.
 Run:
-    uv run python eval/run_eval.py
+    PYTHONPATH=. uv run python eval/run_eval.py
 """
 
 import os
@@ -191,6 +191,8 @@ def main() -> None:
     _ensure_eval_can_run()
     cases = yaml.safe_load(TEST_SET.read_text(encoding="utf-8"))
     print(f"Cases: {len(cases)} · models: {len(config.EVAL_MODELS)}\n")
+    if os.getenv("EVAL_OFFLINE") == "1" and not config.LLM_API_KEY:
+        print("Offline eval mode enabled without GEMINI_API_KEY. Provider-backed cases are expected to fail.\n")
 
     rows = []
     for model in config.EVAL_MODELS:
