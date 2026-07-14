@@ -1,37 +1,32 @@
-"""Единое место для всех настроек проекта.
+"""Central configuration for the application.
 
-Сюда складываем ключи и константы, чтобы они не были разбросаны по коду.
-Меняешь модель или параметр — меняешь в одном месте.
+Environment variables, model settings, retrieval parameters, and paths live here
+so the rest of the codebase can stay provider-agnostic and easy to configure.
 """
+
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Подхватываем ключи из файла .env (если он есть)
 load_dotenv()
 
-# --- Ключи доступа (берутся из .env, в код не вписываем) ---
-# Имена провайдер-нейтральные: сменить провайдера = поменять эти 3 строки, код не трогаем.
+# Credentials are loaded from the environment and never hard-coded.
 LLM_API_KEY = os.getenv("GEMINI_API_KEY", "")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
-# --- Модель для ответа (Google Gemini через OpenAI-совместимый эндпоинт) ---
+# Google Gemini through its OpenAI-compatible endpoint.
 LLM_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-# Модель по умолчанию — выбрана по eval (13/13, 0 галлюцинаций, самая лёгкая/быстрая на free)
 ANSWER_MODEL = "gemini-2.5-flash-lite"
-
-# Модели для сравнения в eval (pro на бесплатном тарифе почти без квоты — не берём)
 EVAL_MODELS = ["gemini-2.5-flash-lite", "gemini-2.5-flash"]
 
-# --- Модель эмбеддингов (локальная, бесплатная) ---
-# Превращает текст в «числовой отпечаток». Мультиязычная — понимает русский.
+# Local multilingual embedding model.
 EMBED_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
-# --- Пути (вычисляются от расположения этого файла, чтобы работало на любой машине) ---
-ROOT = Path(__file__).resolve().parents[1]   # корень проекта
-KB_DIR = ROOT / "data" / "knowledge_base"    # тут лежат документы базы знаний (.md)
-CHROMA_DIR = ROOT / "chroma"                 # тут хранится векторная база
+ROOT = Path(__file__).resolve().parents[1]
+KB_DIR = ROOT / "data" / "knowledge_base"
+CHROMA_DIR = ROOT / "chroma"
 
-# --- Параметры поиска ---
-TOP_K = 4   # сколько самых релевантных кусков достаём из базы на каждый вопрос
+# Retrieval settings.
+TOP_K = int(os.getenv("TOP_K", "4"))
+RETRIEVAL_MAX_DISTANCE = float(os.getenv("RETRIEVAL_MAX_DISTANCE", "1.2"))
