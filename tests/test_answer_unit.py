@@ -109,8 +109,26 @@ def test_answer_rejects_quote_not_present_in_cited_chunk(monkeypatch):
         {"id": "chunk-1", "source": "dostavka.md", "distance": 0.2, "text": "Доставка стоит 350 рублей."},
     ]
     payload = {
-        "answer": "Доставка стоит 99999 рублей.",
+        "answer": "Доставка стоит 350 рублей.",
         "citations": [{"chunk_id": "chunk-1", "quote": "Доставка стоит 99999 рублей."}],
+    }
+
+    monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
+    monkeypatch.setattr(answer_module, "_client", lambda: _FakeClient(json.dumps(payload)))
+
+    result = answer("Сколько стоит доставка?")
+
+    assert result["sources"] == []
+    assert result["error_type"] == "model_contract_error"
+
+
+def test_answer_rejects_numeric_claim_not_present_in_evidence(monkeypatch):
+    chunks = [
+        {"id": "chunk-1", "source": "dostavka.md", "distance": 0.2, "text": "Доставка стоит 350 рублей."},
+    ]
+    payload = {
+        "answer": "Доставка стоит 99999 рублей.",
+        "citations": [{"chunk_id": "chunk-1", "quote": "Доставка стоит 350 рублей."}],
     }
 
     monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
