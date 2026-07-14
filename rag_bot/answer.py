@@ -37,7 +37,7 @@ OUT_OF_DOMAIN_TEXT = {
 }
 
 CITATION_HEADER = {"ru": "Источники", "en": "Sources"}
-_NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)?")
+_NUMBER_RE = re.compile(r"\d+(?:[\s.,]\d+)*")
 
 
 def _client() -> OpenAI:
@@ -61,7 +61,10 @@ def _normalize_space(text: str) -> str:
 
 def _numbers(text: str) -> set[str]:
     """Extract normalized numeric claims from text."""
-    return {match.replace(",", ".") for match in _NUMBER_RE.findall(text)}
+    normalized = set()
+    for match in _NUMBER_RE.findall(text):
+        normalized.add(match.replace(" ", "").replace("\u00a0", "").replace(",", "."))
+    return normalized
 
 
 def _error_result(language: str, route: QueryRoute | str, error_type: str, chunks: list[dict] | None = None) -> dict:
