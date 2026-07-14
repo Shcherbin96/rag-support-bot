@@ -82,6 +82,69 @@ def test_answer_with_retry_retries_transient_provider_error(monkeypatch):
     assert sleeps == [20, 40]
 
 
+def test_eval_model_counts_errors_hallucinations_and_case_details(monkeypatch):
+    responses = [
+        {
+            "text": "provider failed",
+            "sources": [],
+            "route": "factual_in_domain",
+            "error_type": "provider_error",
+            "retryable": False,
+        },
+        {
+            "text": "Tesla Model 3 costs 1 dollar.",
+            "sources": ["unrelated.md"],
+            "route": "factual_in_domain",
+            "error_type": "",
+        },
+        {
+            "text": "Hi. I am the support assistant.",
+            "sources": [],
+            "route": "smalltalk",
+            "error_type": "",
+        },
+    ]
+
+    def fake_answer_with_retry(question, model):
+        return responses.pop(0)
+
+    cases = [
+        {
+            "id": "grounded_provider_error",
+            "type": "grounded",
+            "question": "How much is shipping?",
+            "expect_source": "delivery",
+            "expect_keyword": "350",
+        },
+        {
+            "id": "refusal_hallucination",
+            "type": "refuse",
+            "question": "How much is a Tesla Model 3?",
+        },
+        {
+            "id": "smalltalk_ok",
+            "type": "smalltalk",
+            "question": "Hello",
+        },
+    ]
+
+    monkeypatch.setattr(run_eval, "_answer_with_retry", fake_answer_with_retry)
+    monkeypatch.setattr(run_eval.time, "sleep", lambda seconds: None)
+
+    result = run_eval.eval_model("fake-model", cases)
+
+    assert result["passed"] == 1
+    assert result["total"] == 3
+    assert result["errors"] == 1
+    assert result["hallucinations"] == 1
+    assert result["grounded"] == [0, 1]
+    assert result["refuse"] == [0, 1]
+    assert result["smalltalk"] == [1, 1]
+    assert result["cases"][0]["error"] == "provider_error"
+    assert result["cases"][1]["error"] == ""
+    assert result["cases"][2]["ok"] is True
+
+
 def test_summary_includes_pass_rate_when_failures_exist():
     summary = run_eval._summary_sentence(
         [

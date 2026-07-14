@@ -1,10 +1,9 @@
 """Deterministic query routing before retrieval and LLM calls.
 
-The router is intentionally conservative about clearly unsafe or unrelated
-messages, but it is no longer a tiny keyword whitelist. Natural support-like
-questions should reach retrieval, where the distance threshold and evidence
-validation make the final decision. This reduces false refusals for paraphrases
-that are present in the knowledge base.
+The router blocks clearly unsafe or unrelated messages before retrieval, but it is
+not intended to answer every domain question by itself. Explicit ecommerce and
+support markers reach retrieval, where distance filtering and evidence validation
+make the final decision.
 """
 
 from enum import StrEnum
@@ -51,7 +50,9 @@ SMALLTALK_PHRASES = {
 # as ``order`` in ``border`` and ``card`` in ``cardiology``.
 EN_DOMAIN_TOKENS = {
     "delivery",
+    "deliver",
     "shipping",
+    "ship",
     "pickup",
     "courier",
     "order",
@@ -73,6 +74,9 @@ EN_DOMAIN_TOKENS = {
     "warranty",
     "product",
     "products",
+    "availability",
+    "available",
+    "stock",
     "bonus",
     "bonuses",
     "cashback",
@@ -98,6 +102,7 @@ EN_DOMAIN_TOKENS = {
     "hours",
     "schedule",
     "working",
+    "open",
     "address",
     "gift",
     "business",
@@ -166,6 +171,7 @@ RU_DOMAIN_PREFIXES = {
     "поддерж",
     "менеджер",
     "контакт",
+    "связ",
     "домок",
     "покупател",
     "каталог",
@@ -177,45 +183,6 @@ RU_DOMAIN_PREFIXES = {
     "рабоч",
     "изменить",
     "отменить",
-}
-
-# Question/action markers that make an otherwise unknown phrase worth sending to
-# retrieval. Hard negatives are checked first, so unrelated questions are still
-# blocked before vector search.
-EN_SUPPORT_LIKE_TOKENS = {
-    "can",
-    "could",
-    "do",
-    "does",
-    "how",
-    "where",
-    "when",
-    "what",
-    "which",
-    "is",
-    "are",
-}
-
-RU_SUPPORT_LIKE_TOKENS = {
-    "можно",
-    "могу",
-    "можете",
-    "есть",
-    "ли",
-    "как",
-    "где",
-    "когда",
-    "какой",
-    "какая",
-    "какие",
-    "какое",
-    "сколько",
-    "куда",
-    "что",
-    "купить",
-    "связаться",
-    "работаете",
-    "работает",
 }
 
 ADVERSARIAL_PHRASES = {
@@ -248,12 +215,30 @@ OTHER_COMPANY_MARKERS = {
     "amazon",
 }
 
+# Multi-word unrelated domains. These are checked before positive domain markers
+# so finance uses of "stock" are blocked while ecommerce availability remains in-domain.
+HARD_NEGATIVE_PHRASES = {
+    "stock market",
+    "stock price",
+    "stock prices",
+    "buy stocks",
+    "sell stocks",
+    "learn python",
+    "quantum physics",
+    "recommend a movie",
+    "где купить билеты",
+    "совет по инвестициям",
+    "следующий матч",
+    "приготовить борщ",
+    "посмотреть в кино",
+}
+
 HARD_NEGATIVE_TOKENS = {
     "tesla",
     "weather",
     "cardiology",
     "border",
-    "stock",
+    "stocks",
     "crypto",
     "bitcoin",
     "medicine",
@@ -263,6 +248,14 @@ HARD_NEGATIVE_TOKENS = {
     "soccer",
     "recipe",
     "rain",
+    "python",
+    "quantum",
+    "physics",
+    "paris",
+    "movie",
+    "concert",
+    "tickets",
+    "match",
     "дождь",
     "дождя",
     "погода",
@@ -282,6 +275,13 @@ HARD_NEGATIVE_TOKENS = {
     "верное",
     "верный",
     "верная",
+    "борщ",
+    "кино",
+    "инвестициям",
+    "инвестиции",
+    "билеты",
+    "концерт",
+    "матч",
 }
 
 HARD_NEGATIVE_PREFIXES = {
@@ -325,22 +325,11 @@ def _has_domain_marker(tokens: list[str]) -> bool:
     return _has_prefix(tokens, RU_DOMAIN_PREFIXES)
 
 
-def _looks_support_like(tokens: list[str]) -> bool:
-    """Detect natural support-like questions and requests.
-
-    This is intentionally broader than the domain marker list. Retrieval and
-    evidence validation remain responsible for refusing unsupported facts.
-    """
-    return bool(
-        set(tokens) & EN_SUPPORT_LIKE_TOKENS
-        or set(tokens) & RU_SUPPORT_LIKE_TOKENS
-    )
-
-
-def _has_hard_negative(tokens: list[str]) -> bool:
+def _has_hard_negative(normalized: str, tokens: list[str]) -> bool:
     """Detect clearly unrelated domains that should not reach retrieval."""
     return bool(
-        set(tokens) & HARD_NEGATIVE_TOKENS
+        _has_phrase(normalized, HARD_NEGATIVE_PHRASES)
+        or set(tokens) & HARD_NEGATIVE_TOKENS
         or set(tokens) & OTHER_COMPANY_MARKERS
         or _has_prefix(tokens, HARD_NEGATIVE_PREFIXES)
     )
@@ -352,9 +341,9 @@ def classify_query(text: str) -> QueryRoute:
     Priority matters:
     1. adversarial prompt requests are blocked;
     2. clear unrelated domains and other companies are blocked;
-    3. explicit domain markers and support-like questions reach retrieval;
+    3. explicit ecommerce/support markers reach retrieval;
     4. pure small-talk is handled without retrieval;
-    5. non-question unknown chatter is refused.
+    5. generic unknown questions and chatter are refused.
     """
     normalized = _normalize(text)
     if not normalized:
@@ -365,10 +354,10 @@ def classify_query(text: str) -> QueryRoute:
     if _has_phrase(normalized, ADVERSARIAL_PHRASES):
         return QueryRoute.ADVERSARIAL
 
-    if _has_hard_negative(tokens):
+    if _has_hard_negative(normalized, tokens):
         return QueryRoute.OUT_OF_DOMAIN
 
-    if _has_domain_marker(tokens) or _looks_support_like(tokens):
+    if _has_domain_marker(tokens):
         return QueryRoute.FACTUAL_IN_DOMAIN
 
     if _has_phrase(normalized, SMALLTALK_PHRASES) or any(token in SMALLTALK_TOKENS for token in tokens):
