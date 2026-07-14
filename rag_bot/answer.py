@@ -1,60 +1,67 @@
-"""Шаг 3 RAG — «ответ».
+"""Grounded answer generation for the RAG support assistant."""
 
-Берём найденные куски (retrieval) и просим модель ответить ТОЛЬКО по ним.
-Тут живёт guardrail: нет ответа в кусках → честно «не знаю», без выдумок.
-Модель — через NVIDIA NIM (OpenAI-совместимый API).
-Запуск: uv run python -m rag_bot.answer "вопрос"
-"""
 from openai import OpenAI
 
 from rag_bot import config
-from rag_bot.retrieval import retrieve
+from rag_bot.retrieval import is_relevant, retrieve
 
-# Инструкция модели — здесь задаём поведение и guardrail
 SYSTEM_PROMPT = (
-    "Ты — ассистент поддержки интернет-магазина «ДомОк». "
-    "Если пользователь здоровается, благодарит или задаёт разговорный/мета-вопрос "
-    "(например, на каком языке ты говоришь, кто ты) — ответь коротко, дружелюбно и естественно, "
-    "без отказа и без ссылок на источники. "
-    "Если это ФАКТИЧЕСКИЙ вопрос о магазине (доставка, оплата, возврат, гарантия, товары, бонусы и т.п.) — "
-    "отвечай ТОЛЬКО на основе предоставленных фрагментов базы знаний и в конце укажи источник в скобках. "
-    "Если фактического ответа в фрагментах нет — честно скажи, что не знаешь, и предложи уточнить у менеджера. "
-    "Никогда не выдумывай факты, цены, сроки и условия. "
-    "Отвечай кратко и НА ТОМ ЖЕ ЯЗЫКЕ, на котором задан вопрос."
+    "You are a customer-support assistant for the ДомОк online store. "
+    "For greetings, thanks, or conversational meta-questions, reply briefly and naturally without citations. "
+    "For factual store questions, answer only from the supplied knowledge-base fragments and cite the source. "
+    "If the answer is not present, say that you do not know and offer escalation to a human manager. "
+    "Never invent facts, prices, timelines, or policies. Reply in the same language as the user."
 )
+
+REFUSAL_TEXT = {
+    "ru": "В базе знаний нет надёжного ответа на этот вопрос. Уточните, пожалуйста, у менеджера.",
+    "en": "I could not find a reliable answer in the knowledge base. Please check with a human support agent.",
+}
 
 
 def _client() -> OpenAI:
-    # Стандартный клиент OpenAI, но base_url указывает на провайдера из config (сейчас Gemini)
     return OpenAI(api_key=config.LLM_API_KEY, base_url=config.LLM_BASE_URL)
 
 
-def answer(query: str, k: int = config.TOP_K, model: str = config.ANSWER_MODEL) -> dict:
-    """Вернуть ответ бота: {text, sources, chunks}. model можно подменить (для eval)."""
-    chunks = retrieve(query, k=k)
-    context = "\n\n".join(
-        f"[Источник: {c['source']}]\n{c['text']}" for c in chunks
-    )
-    user_msg = f"Фрагменты базы знаний:\n{context}\n\nВопрос клиента: {query}"
+def _looks_english(text: str) -> bool:
+    latin = sum(char.isascii() and char.isalpha() for char in text)
+    cyrillic = sum("а" <= char.lower() <= "я" for char in text)
+    return latin > cyrillic
 
-    resp = _client().chat.completions.create(
+
+def answer(query: str, k: int = config.TOP_K, model: str = config.ANSWER_MODEL) -> dict:
+    """Return a grounded answer plus sources and retrieved chunks."""
+    chunks = retrieve(query, k=k)
+
+    # Reject low-confidence retrieval before calling the LLM. This complements
+    # the prompt guardrail and avoids grounding an answer on unrelated context.
+    if not is_relevant(chunks):
+        language = "en" if _looks_english(query) else "ru"
+        return {"text": REFUSAL_TEXT[language], "sources": [], "chunks": chunks}
+
+    context = "\n\n".join(
+        f"[Source: {chunk['source']}]\n{chunk['text']}" for chunk in chunks
+    )
+    user_message = f"Knowledge-base fragments:\n{context}\n\nCustomer question: {query}"
+
+    response = _client().chat.completions.create(
         model=model,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_msg},
+            {"role": "user", "content": user_message},
         ],
-        temperature=0.2,   # низкая «температура» = меньше фантазии, больше точности
+        temperature=0.2,
     )
-    text = resp.choices[0].message.content.strip()
-    sources = sorted({c["source"] for c in chunks})
+    text = response.choices[0].message.content.strip()
+    sources = sorted({chunk["source"] for chunk in chunks})
     return {"text": text, "sources": sources, "chunks": chunks}
 
 
 if __name__ == "__main__":
     import sys
 
-    q = " ".join(sys.argv[1:]) or "сколько стоит доставка?"
-    res = answer(q)
-    print(f"❓ {q}\n")
-    print(f"🤖 {res['text']}\n")
-    print(f"📎 источники: {', '.join(res['sources'])}")
+    question = " ".join(sys.argv[1:]) or "сколько стоит доставка?"
+    result = answer(question)
+    print(f"Question: {question}\n")
+    print(f"Answer: {result['text']}\n")
+    print(f"Sources: {', '.join(result['sources']) or 'none'}")
