@@ -44,12 +44,28 @@ def _current_commit() -> str:
         return "unknown"
 
 
+def _ensure_eval_can_run() -> None:
+    """Fail fast when a live LLM eval would be meaningless."""
+    if config.LLM_API_KEY:
+        return
+    if os.getenv("EVAL_OFFLINE") == "1":
+        return
+    raise SystemExit(
+        "GEMINI_API_KEY is required for live eval. "
+        "Set EVAL_OFFLINE=1 only when intentionally testing offline/refusal behavior."
+    )
+
+
 def _answer_with_retry(question: str, model: str, retries: int = 3) -> dict:
-    """Call answer() with retry/backoff for temporary provider errors."""
+    """Call answer() and retry only provider errors marked as transient."""
     result: dict | None = None
     for attempt in range(retries):
         result = answer(question, model=model)
-        if result.get("error_type") == "provider_error" and attempt < retries - 1:
+        if (
+            result.get("error_type") == "provider_error"
+            and result.get("retryable")
+            and attempt < retries - 1
+        ):
             time.sleep(20 * (attempt + 1))
             continue
         return result
@@ -172,10 +188,9 @@ def _case_results_table(rows: list[dict]) -> str:
 
 
 def main() -> None:
+    _ensure_eval_can_run()
     cases = yaml.safe_load(TEST_SET.read_text(encoding="utf-8"))
     print(f"Cases: {len(cases)} · models: {len(config.EVAL_MODELS)}\n")
-    if not config.LLM_API_KEY:
-        print("Warning: GEMINI_API_KEY is not set. Factual LLM-backed cases are expected to fail as provider_error.\n")
 
     rows = []
     for model in config.EVAL_MODELS:
