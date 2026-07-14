@@ -49,6 +49,22 @@
   question: "Hi, how can I return an order?"
   expect_route: factual_in_domain
 
+- id: en_product_stock
+  question: "Is this product in stock?"
+  expect_route: factual_in_domain
+
+- id: en_kettle_stock
+  question: "Do you have this kettle in stock?"
+  expect_route: factual_in_domain
+
+- id: en_products_in_stock
+  question: "What products are in stock?"
+  expect_route: factual_in_domain
+
+- id: en_product_available
+  question: "Is this product available?"
+  expect_route: factual_in_domain
+
 - id: ru_rain_hard_negative
   question: "Как часто идёт дождь?"
   expect_route: out_of_domain
@@ -75,6 +91,54 @@
 
 - id: ru_other_store
   question: "Расскажи про магазин Пятёрочка"
+  expect_route: out_of_domain
+
+- id: en_stock_market
+  question: "What is the stock market doing today?"
+  expect_route: out_of_domain
+
+- id: en_stock_price
+  question: "What is Apple's stock price?"
+  expect_route: out_of_domain
+
+- id: en_buy_stocks
+  question: "Should I buy stocks?"
+  expect_route: out_of_domain
+
+- id: en_learn_python
+  question: "How do I learn Python?"
+  expect_route: out_of_domain
+
+- id: en_quantum_physics
+  question: "What is quantum physics?"
+  expect_route: out_of_domain
+
+- id: en_paris
+  question: "Where is Paris?"
+  expect_route: out_of_domain
+
+- id: en_movie_recommendation
+  question: "Can you recommend a movie?"
+  expect_route: out_of_domain
+
+- id: ru_borsch
+  question: "Как приготовить борщ?"
+  expect_route: out_of_domain
+
+- id: ru_movie
+  question: "Что посмотреть в кино?"
+  expect_route: out_of_domain
+
+- id: ru_investment_advice
+  question: "Можно совет по инвестициям?"
+  expect_route: out_of_domain
+
+- id: ru_concert_tickets
+  question: "Где купить билеты на концерт?"
+  expect_route: out_of_domain
+
+- id: ru_next_match
+  question: "Когда следующий матч?"
   expect_route: out_of_domain
 
 - id: adversarial_mixed
