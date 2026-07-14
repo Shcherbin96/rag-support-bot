@@ -64,21 +64,25 @@ async def on_start(message: Message) -> None:
 
 @dp.message(F.text)
 async def on_question(message: Message) -> None:
-    await message.bot.send_chat_action(message.chat.id, ChatAction.TYPING)
     question = message.text or ""
     fingerprint = _message_fingerprint(question)
 
     try:
+        await message.bot.send_chat_action(message.chat.id, ChatAction.TYPING)
         async with ANSWER_SEMAPHORE:
             result = await asyncio.wait_for(
                 asyncio.to_thread(answer, question),
                 timeout=45,
             )
-        log.info(
-            "handled_question fingerprint=%s route=%s sources=%s",
+
+        error_type = result.get("error_type", "")
+        log_method = log.warning if error_type else log.info
+        log_method(
+            "handled_question fingerprint=%s route=%s sources=%s error_type=%s",
             fingerprint,
             result.get("route", "unknown"),
-            ",".join(result["sources"]) or "none",
+            ",".join(result.get("sources", [])) or "none",
+            error_type or "none",
         )
         for part in _split_for_telegram(result["text"]):
             await message.answer(part)

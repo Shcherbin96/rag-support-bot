@@ -39,6 +39,24 @@ def test_routes_in_domain_support_questions(query):
 @pytest.mark.parametrize(
     "query",
     [
+        "Можно ли наличными?",
+        "Есть ли рассрочка?",
+        "Где мой электронный чек?",
+        "Как с вами связаться?",
+        "Какой у вас телефон?",
+        "Когда вы работаете?",
+        "Работаете ли вы с юрлицами?",
+        "Можно купить в подарок?",
+        "Можно изменить адрес?",
+    ],
+)
+def test_routes_kb_paraphrases_that_do_not_use_original_keywords(query):
+    assert classify_query(query) == QueryRoute.FACTUAL_IN_DOMAIN
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
         "Сколько стоит Tesla Model 3?",
         "What is the weather in Moscow?",
         "I need help with cardiology",
@@ -47,6 +65,19 @@ def test_routes_in_domain_support_questions(query):
     ],
 )
 def test_routes_out_of_domain_questions(query):
+    assert classify_query(query) == QueryRoute.OUT_OF_DOMAIN
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Как часто идёт дождь?",
+        "Что такое акционерное общество?",
+        "Это верное решение?",
+        "Расскажи про картографию",
+    ],
+)
+def test_routes_russian_hard_negatives_for_ambiguous_prefixes(query):
     assert classify_query(query) == QueryRoute.OUT_OF_DOMAIN
 
 

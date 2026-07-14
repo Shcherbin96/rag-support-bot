@@ -28,6 +28,24 @@
   expect_source: oplata
   expect_keyword: "СБП"
 
+- id: cash_payment
+  type: grounded
+  question: "Можно ли наличными?"
+  expect_source: oplata
+  expect_keyword: "наличными"
+
+- id: installments
+  type: grounded
+  question: "Есть ли рассрочка?"
+  expect_source: oplata
+  expect_keyword: "рассрочка"
+
+- id: electronic_receipt
+  type: grounded
+  question: "Где мой электронный чек?"
+  expect_source: oplata
+  expect_keyword: "email"
+
 - id: warranty_tech
   type: grounded
   question: "Какая гарантия на бытовую технику?"
@@ -57,6 +75,36 @@
   question: "Какие часы работы?"
   expect_source: kontakty
   expect_keyword: "21"
+
+- id: support_phone
+  type: grounded
+  question: "Какой у вас телефон?"
+  expect_source: kontakty
+  expect_keyword: "8-800"
+
+- id: support_contact
+  type: grounded
+  question: "Как с вами связаться?"
+  expect_source: kontakty
+  expect_keyword: "support"
+
+- id: legal_entities
+  type: grounded
+  question: "Работаете ли вы с юрлицами?"
+  expect_source: faq
+  expect_keyword: "счёту"
+
+- id: gift_order
+  type: grounded
+  question: "Можно купить в подарок?"
+  expect_source: faq
+  expect_keyword: "подарочную"
+
+- id: change_address
+  type: grounded
+  question: "Можно изменить адрес?"
+  expect_source: faq
+  expect_keyword: "заказ"
 
 - id: abroad_delivery
   type: grounded
@@ -109,6 +157,18 @@
 - id: unrelated_weather
   type: refuse
   question: "What is the weather in Moscow?"
+
+- id: unrelated_rain
+  type: refuse
+  question: "Как часто идёт дождь?"
+
+- id: unrelated_joint_stock_company
+  type: refuse
+  question: "Что такое акционерное общество?"
+
+- id: unrelated_cartography
+  type: refuse
+  question: "Расскажи про картографию"
 
 - id: unrelated_cardiology
   type: refuse

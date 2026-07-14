@@ -38,6 +38,18 @@ OUT_OF_DOMAIN_TEXT = {
 
 CITATION_HEADER = {"ru": "Источники", "en": "Sources"}
 _NUMBER_RE = re.compile(r"\d+(?:[\s.,]\d+)*")
+_RETRYABLE_PROVIDER_MARKERS = (
+    "429",
+    "rate limit",
+    "timeout",
+    "timed out",
+    "temporarily",
+    "temporary",
+    "503",
+    "502",
+    "504",
+    "service unavailable",
+)
 
 
 def _client() -> OpenAI:
@@ -67,7 +79,20 @@ def _numbers(text: str) -> set[str]:
     return normalized
 
 
-def _error_result(language: str, route: QueryRoute | str, error_type: str, chunks: list[dict] | None = None) -> dict:
+def _is_retryable_provider_error(exc: Exception) -> bool:
+    """Return whether a provider error looks transient enough to retry."""
+    message = str(exc).casefold()
+    return any(marker in message for marker in _RETRYABLE_PROVIDER_MARKERS)
+
+
+def _error_result(
+    language: str,
+    route: QueryRoute | str,
+    error_type: str,
+    chunks: list[dict] | None = None,
+    *,
+    retryable: bool = False,
+) -> dict:
     """Return a controlled refusal with a machine-readable error type."""
     return {
         "text": REFUSAL_TEXT[language],
@@ -75,6 +100,19 @@ def _error_result(language: str, route: QueryRoute | str, error_type: str, chunk
         "chunks": chunks or [],
         "route": route.value if isinstance(route, QueryRoute) else str(route),
         "error_type": error_type,
+        "retryable": retryable,
+    }
+
+
+def _success_result(text: str, sources: list[str], chunks: list[dict], route: QueryRoute | str) -> dict:
+    """Return a normalized successful result payload."""
+    return {
+        "text": text,
+        "sources": sources,
+        "chunks": chunks,
+        "route": route.value if isinstance(route, QueryRoute) else str(route),
+        "error_type": "",
+        "retryable": False,
     }
 
 
@@ -148,10 +186,10 @@ def answer(query: str, k: int = config.TOP_K, model: str = config.ANSWER_MODEL) 
     route = classify_query(query)
 
     if route == QueryRoute.SMALLTALK:
-        return {"text": SMALLTALK_TEXT[language], "sources": [], "chunks": [], "route": route.value}
+        return _success_result(SMALLTALK_TEXT[language], [], [], route)
 
     if route in {QueryRoute.OUT_OF_DOMAIN, QueryRoute.ADVERSARIAL}:
-        return {"text": OUT_OF_DOMAIN_TEXT[language], "sources": [], "chunks": [], "route": route.value}
+        return _success_result(OUT_OF_DOMAIN_TEXT[language], [], [], route)
 
     try:
         chunks = retrieve(query, k=k)
@@ -162,14 +200,9 @@ def answer(query: str, k: int = config.TOP_K, model: str = config.ANSWER_MODEL) 
 
     context_chunks = accepted_chunks(chunks)
     if not context_chunks:
-        return {
-            "text": REFUSAL_TEXT[language],
-            "sources": [],
-            "chunks": chunks,
-            "route": route.value,
-            "refusal_reason": "no_accepted_context",
-            "error_type": "",
-        }
+        result = _success_result(REFUSAL_TEXT[language], [], chunks, route)
+        result["refusal_reason"] = "no_accepted_context"
+        return result
 
     context = "\n\n".join(
         f"[Chunk ID: {chunk['id']}]\n[Source: {chunk['source']}]\n{chunk['text']}"
@@ -188,8 +221,14 @@ def answer(query: str, k: int = config.TOP_K, model: str = config.ANSWER_MODEL) 
             max_tokens=500,
         )
         raw_text = response.choices[0].message.content or ""
-    except Exception:
-        return _error_result(language, route, "provider_error", chunks)
+    except Exception as exc:
+        return _error_result(
+            language,
+            route,
+            "provider_error",
+            chunks,
+            retryable=_is_retryable_provider_error(exc),
+        )
 
     try:
         answer_text, citations = _parse_model_response(
@@ -202,7 +241,7 @@ def answer(query: str, k: int = config.TOP_K, model: str = config.ANSWER_MODEL) 
     cited_chunks = [chunk for chunk in context_chunks if chunk["id"] in cited_ids]
     sources = sorted({chunk["source"] for chunk in cited_chunks})
     text = _format_with_citations(answer_text, cited_chunks, language)
-    return {"text": text, "sources": sources, "chunks": chunks, "route": route.value, "error_type": ""}
+    return _success_result(text, sources, chunks, route)
 
 
 if __name__ == "__main__":
