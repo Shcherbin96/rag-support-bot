@@ -145,7 +145,14 @@ def answer(query: str, k: int = config.TOP_K, model: str = config.ANSWER_MODEL) 
 
     context_chunks = accepted_chunks(chunks)
     if not context_chunks:
-        return {"text": REFUSAL_TEXT[language], "sources": [], "chunks": chunks, "route": route.value, "refusal_reason": "no_accepted_context"}
+        return {
+            "text": REFUSAL_TEXT[language],
+            "sources": [],
+            "chunks": chunks,
+            "route": route.value,
+            "refusal_reason": "no_accepted_context",
+            "error_type": "",
+        }
 
     context = "\n\n".join(
         f"[Chunk ID: {chunk['id']}]\n[Source: {chunk['source']}]\n{chunk['text']}"
@@ -168,9 +175,6 @@ def answer(query: str, k: int = config.TOP_K, model: str = config.ANSWER_MODEL) 
         return _error_result(language, route, "provider_error", chunks)
 
     try:
-        citations = _parse_model_response(
-            raw_text, {chunk["id"]: chunk for chunk in context_chunks}
-        )[1]
         answer_text, citations = _parse_model_response(
             raw_text, {chunk["id"]: chunk for chunk in context_chunks}
         )
