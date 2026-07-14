@@ -17,9 +17,22 @@ class _FakeCompletions:
         )
 
 
+class _FailingCompletions:
+    def __init__(self, exc: Exception):
+        self.exc = exc
+
+    def create(self, **kwargs):
+        raise self.exc
+
+
 class _FakeClient:
     def __init__(self, content: str):
         self.chat = SimpleNamespace(completions=_FakeCompletions(content))
+
+
+class _FailingClient:
+    def __init__(self, exc: Exception):
+        self.chat = SimpleNamespace(completions=_FailingCompletions(exc))
 
 
 def test_out_of_domain_query_is_refused_before_retrieval(monkeypatch):
@@ -31,6 +44,7 @@ def test_out_of_domain_query_is_refused_before_retrieval(monkeypatch):
 
     assert result["sources"] == []
     assert result["route"] == "out_of_domain"
+    assert result["error_type"] == ""
     assert "DomOk" in result["text"]
 
 
@@ -43,6 +57,7 @@ def test_smalltalk_is_handled_before_retrieval(monkeypatch):
 
     assert result["sources"] == []
     assert result["route"] == "smalltalk"
+    assert result["error_type"] == ""
     assert "ДомОк" in result["text"]
 
 
@@ -149,3 +164,31 @@ def test_retrieval_exception_fails_closed(monkeypatch):
 
     assert result["sources"] == []
     assert result["error_type"] == "retrieval_error"
+
+
+def test_transient_provider_error_is_marked_retryable(monkeypatch):
+    chunks = [
+        {"id": "chunk-1", "source": "dostavka.md", "distance": 0.2, "text": "Доставка стоит 350 рублей."},
+    ]
+
+    monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
+    monkeypatch.setattr(answer_module, "_client", lambda: _FailingClient(RuntimeError("429 rate limit")))
+
+    result = answer("Сколько стоит доставка?")
+
+    assert result["error_type"] == "provider_error"
+    assert result["retryable"] is True
+
+
+def test_permanent_provider_error_is_not_retryable(monkeypatch):
+    chunks = [
+        {"id": "chunk-1", "source": "dostavka.md", "distance": 0.2, "text": "Доставка стоит 350 рублей."},
+    ]
+
+    monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
+    monkeypatch.setattr(answer_module, "_client", lambda: _FailingClient(RuntimeError("invalid api key")))
+
+    result = answer("Сколько стоит доставка?")
+
+    assert result["error_type"] == "provider_error"
+    assert result["retryable"] is False
