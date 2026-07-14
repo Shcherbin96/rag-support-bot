@@ -2,46 +2,54 @@
 
 ![CI](https://github.com/Shcherbin96/rag-support-bot/actions/workflows/ci.yml/badge.svg)
 
-A production-minded **RAG (Retrieval-Augmented Generation) support assistant** for Telegram. It answers customer questions strictly from a knowledge base, cites sources, refuses to invent unsupported facts, and replies in the user's language.
+A portfolio-grade **RAG (Retrieval-Augmented Generation) support assistant** for Telegram. It answers customer-support questions from a Markdown knowledge base, uses a deterministic domain router before retrieval, validates model citations against retrieved chunk IDs, and refuses unsupported questions instead of pretending to know.
 
-Built as a portfolio demo for a fictional home-goods store, **DomOk**. The business domain is replaceable: swap the Markdown knowledge base, rebuild the index, and the same architecture can support another company.
+Built as a demo for a fictional home-goods store, **DomOk**. The business domain is replaceable: swap the Markdown knowledge base, rebuild the index, and recalibrate retrieval/routing behavior for a new company.
 
-> **Live demo:** Telegram — [@ai_demo_assistmoki_bot](https://t.me/ai_demo_assistmoki_bot)
+> **Live demo:** Telegram — [@ai_demo_assistmoki_bot](https://t.me/ai_demo_assistmoki_bot). Availability is not guaranteed; the bot may be offline during development.
 
 ---
 
 ## Business use case
 
-Small companies often answer the same support questions manually: delivery, payment, returns, warranty, product conditions, and order flow. This project shows how to automate first-line support while keeping the assistant grounded in company-approved documents.
+Small companies often answer the same support questions manually: delivery, payment, returns, warranty, product conditions, bonuses, and order flow. This project shows how to automate first-line support while keeping the assistant constrained to company-approved documents.
 
 The goal is not to make a chatbot that sounds confident. The goal is to make a support assistant that knows when it does **not** know.
 
 ## Key features
 
-- **RAG over business documents** — Markdown knowledge base → chunking → embeddings → Chroma vector search.
-- **Source citations** — factual answers cite the document source used for grounding.
-- **Deterministic retrieval guardrail** — weak retrieval results are refused before calling the LLM.
-- **Prompt-level anti-hallucination guardrail** — the LLM is instructed to answer only from supplied fragments.
-- **Bilingual behavior** — replies in Russian or English depending on the user's message.
-- **Provider-agnostic LLM client** — Gemini is called through an OpenAI-compatible API; the provider can be changed in config.
-- **Evaluation harness** — test-set based evaluation for grounded answers, refusal behavior, small-talk, and hallucination count.
-- **Telegram interface** — `aiogram` bot with long polling for a simple live demo.
-- **Docker-ready** — includes a Dockerfile for deployment on a VPS or container platform.
+- **Domain routing before retrieval** — small-talk, adversarial, out-of-domain, and factual support questions are separated before semantic search.
+- **RAG over business documents** — Markdown knowledge base → section chunks → embeddings → Chroma vector search.
+- **Retrieval relevance check** — accepted context is filtered by a configurable distance threshold.
+- **Structured answer contract** — the LLM must return JSON with `answer` and cited `chunk-id` values.
+- **Validated citations** — citations are accepted only if they reference retrieved chunk IDs; user-visible sources are derived from validated citations only.
+- **Fail-closed behavior** — invalid JSON, missing citations, invalid citations, missing index, or model errors return a refusal instead of an unsupported answer.
+- **Bilingual behavior** — small demo support for Russian and English.
+- **Telegram interface** — `aiogram` bot with timeout, concurrency limit, privacy-safer logging, and friendly fallback message.
+- **Evaluation harness** — test-set based evaluation for grounded answers, refusals, small-talk, hallucination count, and runtime errors.
+- **Docker-ready demo** — includes a Dockerfile for containerized bot runtime.
 
 ## Architecture
 
 ```text
-documents (.md)
-   │  ingestion: split by sections + embed
+user message
+   │
+   ├─► deterministic router
+   │      ├─ small-talk → direct response
+   │      ├─ adversarial / out-of-domain → refusal
+   │      └─ factual support question
    ▼
-Chroma vector DB
-   │  retrieval: top-k chunks by semantic similarity
-   │  deterministic relevance check: distance threshold
+Chroma retrieval over Markdown knowledge base
+   │
+   ├─ filter accepted chunks by distance threshold
    ▼
-answer agent  ──►  LLM (Gemini via OpenAI-compatible client)
-   │  prompt: answer only from retrieved chunks, cite source, refuse if absent
+answer agent ──► LLM via OpenAI-compatible Gemini client
+   │             output contract: {"answer": "...", "citations": ["chunk-id"]}
    ▼
-Telegram bot (aiogram, long polling)
+validate citations against retrieved context
+   │
+   ├─ invalid / missing citations → refusal
+   └─ valid citations → user answer + cited source files
 ```
 
 Main modules:
@@ -49,10 +57,11 @@ Main modules:
 ```text
 rag_bot/
   config.py       # environment variables, model settings, paths, retrieval threshold
+  router.py       # deterministic pre-retrieval query routing
   ingestion.py    # knowledge-base documents → chunks → embeddings → Chroma
-  retrieval.py    # semantic search + relevance check
-  answer.py       # grounded answer generation + refusal behavior
-  bot.py          # Telegram interface
+  retrieval.py    # semantic search + relevance filtering
+  answer.py       # structured grounded answer generation + citation validation
+  bot.py          # Telegram interface and runtime error boundary
 
 data/knowledge_base/   # demo business documents
 eval/                  # evaluation harness and results
@@ -86,23 +95,16 @@ uv run python -m rag_bot.answer "сколько стоит доставка?"
 uv run python -m rag_bot.bot
 ```
 
-Get keys:
-
-- Gemini API key: Google AI Studio.
-- Telegram bot token: Telegram [@BotFather](https://t.me/BotFather).
-
 ## Configuration
-
-Environment variables:
 
 | Variable | Required | Default | Purpose |
 |---|---:|---:|---|
 | `GEMINI_API_KEY` | For LLM calls | empty | Gemini API key used through the OpenAI-compatible client. |
 | `TELEGRAM_BOT_TOKEN` | For Telegram bot | empty | Telegram bot token from BotFather. |
 | `TOP_K` | No | `4` | Number of retrieved chunks. |
-| `RETRIEVAL_MAX_DISTANCE` | No | `1.2` | Maximum accepted top retrieval distance before refusing without an LLM call. |
+| `RETRIEVAL_MAX_DISTANCE` | No | `1.2` | Maximum accepted chunk distance before that chunk is excluded from context. |
 
-The CI workflow is designed to pass without real secrets. Tests that require live LLM access are skipped when `GEMINI_API_KEY` is absent.
+The CI workflow is designed to pass without real secrets. Live LLM tests are skipped when `GEMINI_API_KEY` is absent.
 
 ## Evaluation
 
@@ -112,23 +114,26 @@ Run the evaluation harness:
 PYTHONPATH=. uv run python eval/run_eval.py
 ```
 
-Current demo result:
+The report is generated from measured results and includes timestamp, commit SHA when available, retrieval threshold, pass counts, hallucination count, and runtime error count. The committed `eval/results.md` is a reproducibility note, not a permanent quality claim.
 
-| Model | Passed | Hallucinations | Notes |
-|---|---:|---:|---|
-| `gemini-2.5-flash-lite` | **13/13** | **0** | Chosen as the default model for this task. |
-| `gemini-2.5-flash` / `pro` | — | — | Limited by Gemini free-tier rate limits during testing. |
+## Safety design and limitations
 
-Key takeaway: for this support-bot task, the lightweight model passed the available evaluation set with zero hallucinations. Model choice is based on measured task behavior, not model size.
+The project uses multiple guardrails:
 
-## Retrieval safety
+1. **Domain router** rejects obvious out-of-domain and adversarial messages before retrieval.
+2. **Retrieval threshold** filters accepted chunks before the LLM call.
+3. **Structured output contract** asks the LLM for JSON with cited chunk IDs.
+4. **Citation validation** rejects missing or invalid citations.
+5. **Runtime fallback** returns a controlled message on model, parsing, retrieval, or bot errors.
 
-The assistant has two safety layers:
+Known limitations:
 
-1. **Retrieval relevance check** — if the best retrieved chunk is too far from the query, the app refuses before calling the LLM.
-2. **Grounded generation prompt** — if retrieval is accepted, the LLM receives only selected chunks and is instructed to answer only from them.
-
-The current threshold is intentionally simple and transparent for a portfolio demo. See [`docs/retrieval-calibration.md`](docs/retrieval-calibration.md) for the calibration protocol and production notes.
+- The router is deterministic and intentionally simple; it should be replaced or augmented for broader production domains.
+- Vector-distance thresholding alone is not a reliable domain boundary, which is why routing and citation validation are separate layers.
+- The demo knowledge base is small and synthetic.
+- The eval set is useful for regression checks but still limited; production use would need a larger labeled set and monitoring.
+- The Telegram bot uses long polling rather than webhook deployment.
+- The Dockerfile is a demo image, not a hardened production container.
 
 ## Tests and CI
 
@@ -140,7 +145,7 @@ uv run python -m rag_bot.ingestion
 uv run pytest -q
 ```
 
-GitHub Actions runs the same core checks: dependency installation, index build, and pytest.
+GitHub Actions runs dependency installation, index build, and pytest. Deterministic unit tests cover routing, relevance checks, structured citation validation, and fail-closed behavior. Optional live LLM tests are skipped without `GEMINI_API_KEY`.
 
 ## Docker
 
@@ -151,23 +156,13 @@ docker run --env-file .env rag-support-bot
 
 The Docker image builds the vector index during image build and starts the Telegram bot at runtime.
 
-## Demo limitations
-
-This is a portfolio demo, not a production SaaS deployment. Known limitations:
-
-- The default retrieval threshold needs calibration against a larger real query set before production use.
-- The demo uses long polling for Telegram instead of webhook deployment.
-- The knowledge base is small and synthetic.
-- The current eval set is useful but still small; production use would require larger regression tests and monitoring.
-- The LLM uses a free-tier API during development; production traffic needs paid quota or another provider.
-
 ## Why this project matters
 
 This repository demonstrates practical AI automation skills:
 
 - building a working RAG pipeline;
-- designing guardrails against unsupported answers;
-- evaluating model behavior with a test set;
-- separating deterministic logic from LLM behavior;
-- shipping a runnable Telegram demo;
+- adding deterministic routing before retrieval;
+- validating LLM citations instead of trusting plain text;
+- separating deterministic safety logic from LLM behavior;
+- writing CI-friendly mocked tests for AI workflows;
 - documenting trade-offs and limitations clearly.
