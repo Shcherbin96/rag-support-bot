@@ -1,9 +1,5 @@
-"""Шаг 1 RAG — «расставить библиотеку».
+"""Build the local Chroma index from Markdown knowledge-base documents."""
 
-Берём документы базы знаний (.md), режем каждый на смысловые куски,
-превращаем в эмбеддинги и складываем в векторную базу Chroma.
-Запуск: uv run python -m rag_bot.ingestion
-"""
 from pathlib import Path
 
 import chromadb
@@ -15,45 +11,48 @@ COLLECTION = "domok"
 
 
 def load_chunks(kb_dir: Path) -> list[dict]:
-    """Читаем все .md и режем на куски по разделам (заголовки '## ').
-
-    Почему режем: класть весь документ одним куском плохо — поиск вернёт
-    слишком много лишнего. Маленькие куски по темам ищутся точнее.
-    """
+    """Load Markdown files and split them into section-level chunks."""
     chunks: list[dict] = []
     for path in sorted(kb_dir.glob("*.md")):
         text = path.read_text(encoding="utf-8")
-        parts = text.split("\n## ")              # делим по разделам
-        for i, part in enumerate(parts):
+        parts = text.split("\n## ")
+        for index, part in enumerate(parts):
             part = part.strip()
             if not part:
                 continue
-            body = part if i == 0 else "## " + part   # возвращаем срезанный заголовок
+            body = part if index == 0 else "## " + part
             chunks.append({"text": body, "source": path.name})
     return chunks
 
 
 def build_index() -> int:
-    """Строим векторную базу из кусков. Возвращаем число кусков."""
+    """Rebuild the Chroma collection from the current knowledge base."""
     chunks = load_chunks(config.KB_DIR)
+    if not chunks:
+        raise RuntimeError(f"No Markdown chunks found in knowledge base: {config.KB_DIR}")
+
     client = chromadb.PersistentClient(path=str(config.CHROMA_DIR))
     embed_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
         model_name=config.EMBED_MODEL
     )
-    # пересоздаём коллекцию начисто, чтобы при повторном запуске не было дублей
+
+    # Demo-friendly rebuild: recreate the collection to avoid duplicate chunks.
+    # Missing-collection errors are expected on a clean CI runner. Other Chroma
+    # failures are surfaced later when create/add/count fails.
     try:
         client.delete_collection(COLLECTION)
     except Exception:
         pass
-    coll = client.create_collection(COLLECTION, embedding_function=embed_fn)
-    coll.add(
-        ids=[f"chunk-{i}" for i in range(len(chunks))],
-        documents=[c["text"] for c in chunks],
-        metadatas=[{"source": c["source"]} for c in chunks],
+
+    collection = client.create_collection(COLLECTION, embedding_function=embed_fn)
+    collection.add(
+        ids=[f"chunk-{index}" for index in range(len(chunks))],
+        documents=[chunk["text"] for chunk in chunks],
+        metadatas=[{"source": chunk["source"]} for chunk in chunks],
     )
-    return coll.count()
+    return collection.count()
 
 
 if __name__ == "__main__":
-    n = build_index()
-    print(f"Готово: в индексе {n} кусков из базы знаний.")
+    count = build_index()
+    print(f"Done: indexed {count} knowledge-base chunks.")
