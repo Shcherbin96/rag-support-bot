@@ -37,11 +37,11 @@ def build_index() -> int:
     )
 
     # Demo-friendly rebuild: recreate the collection to avoid duplicate chunks.
-    # A production service should build a versioned temporary collection and switch
-    # only after validation.
+    # Missing-collection errors are expected on a clean CI runner. Other Chroma
+    # failures are surfaced later when create/add/count fails.
     try:
         client.delete_collection(COLLECTION)
-    except ValueError:
+    except Exception:
         pass
 
     collection = client.create_collection(COLLECTION, embedding_function=embed_fn)
