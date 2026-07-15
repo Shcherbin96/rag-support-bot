@@ -5,11 +5,13 @@ import pytest
 import eval.run_eval as run_eval
 
 
-def test_eval_fails_fast_without_api_key(monkeypatch):
+def test_eval_fails_fast_without_selected_provider_api_key(monkeypatch):
     monkeypatch.setattr(run_eval.config, "LLM_API_KEY", "")
+    monkeypatch.setattr(run_eval.config, "LLM_PROVIDER", "nvidia")
+    monkeypatch.setattr(run_eval.config, "LLM_API_KEY_ENV", "NVIDIA_API_KEY")
     monkeypatch.delenv("EVAL_OFFLINE", raising=False)
 
-    with pytest.raises(SystemExit, match="GEMINI_API_KEY is required"):
+    with pytest.raises(SystemExit, match="NVIDIA_API_KEY is required"):
         run_eval._ensure_eval_can_run()
 
 
