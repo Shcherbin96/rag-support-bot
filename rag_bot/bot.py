@@ -19,18 +19,23 @@ dp = Dispatcher()
 ANSWER_SEMAPHORE = asyncio.Semaphore(3)
 TELEGRAM_LIMIT = 4096
 FALLBACK_MESSAGE = (
-    "Сейчас не получилось обработать вопрос безопасно. "
-    "Пожалуйста, попробуйте позже или обратитесь к менеджеру."
+    "I could not process the question safely right now. "
+    "Please try again later or contact a human support manager.\n\n"
+    "Не получилось безопасно обработать вопрос. "
+    "Попробуйте позже или обратитесь к менеджеру."
 )
 
 GREETING = (
-    "👋 Привет! Я ассистент магазина ДомОк.\n"
-    "Отвечаю по базе знаний: доставка, оплата, возврат, гарантия, бонусы и заказы. "
-    "Если ответа нет в базе, я не буду выдумывать.\n\n"
-    "Примеры вопросов:\n"
-    "• Сколько стоит доставка?\n"
-    "• Как вернуть товар?\n"
-    "• Как работает бонусная программа?"
+    "👋 Hi. I’m a demo support assistant for DomOk, a fictional home-goods store.\n"
+    "I answer from a small knowledge base about delivery, payments, returns, warranty, bonuses, "
+    "product categories, and order flow. If the answer is not in the knowledge base, I will refuse "
+    "instead of inventing a policy.\n\n"
+    "Example questions:\n"
+    "• How much is shipping?\n"
+    "• Which payment methods do you accept?\n"
+    "• How can I return an order?\n"
+    "• How can I reach you?\n\n"
+    "Russian demo questions are also supported, for example: Сколько стоит доставка?"
 )
 
 
