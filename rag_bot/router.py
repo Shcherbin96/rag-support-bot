@@ -1,11 +1,13 @@
 """Semantic query routing before retrieval and LLM calls.
 
-The router blocks clearly unsafe or unrelated messages before retrieval, but it is
-not intended to answer every domain question by itself. Explicit ecommerce and
-support markers reach retrieval, where distance filtering and evidence validation
-make the final decision.
+Adversarial prompt-injection is caught by a deterministic phrase check; every other
+message is routed by cosine similarity between its embedding and curated per-route
+anchor phrases. In-domain questions still pass through retrieval, where distance
+filtering and citation validation make the final decision. Uncertain messages route
+to out-of-domain (fail-closed).
 """
 
+from collections.abc import Callable
 from enum import StrEnum
 import logging
 import os
@@ -13,6 +15,8 @@ import os
 import numpy as np
 
 from rag_bot import embeddings
+
+EmbedFn = Callable[[list[str]], np.ndarray]
 
 log = logging.getLogger("nestwell-router")
 
@@ -132,7 +136,7 @@ ANCHORS: dict[QueryRoute, list[str]] = {
 _anchor_cache: dict[QueryRoute, np.ndarray] | None = None
 
 
-def _anchor_matrices(embed_fn):
+def _anchor_matrices(embed_fn: EmbedFn) -> dict[QueryRoute, np.ndarray]:
     """Embed anchors once; cache only for the default (shared) embed function."""
     global _anchor_cache
     if embed_fn is embeddings.embed:
@@ -142,7 +146,7 @@ def _anchor_matrices(embed_fn):
     return {r: np.asarray(embed_fn(t)) for r, t in ANCHORS.items()}
 
 
-def classify_query(text: str, embed_fn=None) -> QueryRoute:
+def classify_query(text: str, embed_fn: EmbedFn | None = None) -> QueryRoute:
     """Classify a message before retrieval. Fail-closed to OUT_OF_DOMAIN."""
     if embed_fn is None:
         embed_fn = embeddings.embed
