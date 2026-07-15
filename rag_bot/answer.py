@@ -1,6 +1,7 @@
 """Grounded answer generation for the RAG support assistant."""
 
 import json
+import logging
 import re
 from json import JSONDecodeError
 
@@ -9,6 +10,8 @@ from openai import OpenAI
 from rag_bot import config
 from rag_bot.retrieval import KnowledgeBaseNotReadyError, accepted_chunks, retrieve
 from rag_bot.router import QueryRoute, classify_query
+
+log = logging.getLogger("domok-answer")
 
 SYSTEM_PROMPT = (
     "You are a customer-support assistant for the DomOk online store. "
@@ -53,7 +56,16 @@ _RETRYABLE_PROVIDER_MARKERS = (
 
 
 def _client() -> OpenAI:
-    return OpenAI(api_key=config.LLM_API_KEY, base_url=config.LLM_BASE_URL)
+    # A bounded timeout prevents a stalled provider from hanging the call, and
+    # max_retries=0 keeps a single attempt within the bot's 45s budget (the SDK
+    # would otherwise retry internally). Retry policy lives in the eval harness,
+    # which keys off the "retryable" flag on provider errors.
+    return OpenAI(
+        api_key=config.LLM_API_KEY,
+        base_url=config.LLM_BASE_URL,
+        timeout=config.LLM_TIMEOUT,
+        max_retries=0,
+    )
 
 
 def _looks_english(text: str) -> bool:
@@ -196,6 +208,7 @@ def answer(query: str, k: int = config.TOP_K, model: str = config.ANSWER_MODEL) 
     except KnowledgeBaseNotReadyError:
         return _error_result(language, route, "missing_index")
     except Exception:
+        log.warning("retrieval_error", exc_info=True)
         return _error_result(language, route, "retrieval_error")
 
     context_chunks = accepted_chunks(chunks)
@@ -234,7 +247,11 @@ def answer(query: str, k: int = config.TOP_K, model: str = config.ANSWER_MODEL) 
         answer_text, citations = _parse_model_response(
             raw_text, {chunk["id"]: chunk for chunk in context_chunks}
         )
-    except Exception:
+    except Exception as exc:
+        # Surface *why* the answer was rejected. Citation/number validation is
+        # intentionally strict, so this also reveals false refusals (e.g. a
+        # correct answer phrasing a number the cited quote does not contain).
+        log.info("model_contract_rejected reason=%s", exc)
         return _error_result(language, route, "model_contract_error", chunks)
 
     cited_ids = {citation["chunk_id"] for citation in citations}

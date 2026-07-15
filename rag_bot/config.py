@@ -67,3 +67,7 @@ CHROMA_DIR = ROOT / "chroma"
 # Retrieval settings.
 TOP_K = int(os.getenv("TOP_K", "4"))
 RETRIEVAL_MAX_DISTANCE = float(os.getenv("RETRIEVAL_MAX_DISTANCE", "1.2"))
+
+# LLM request timeout in seconds. Kept below the bot's 45s answer wait so a stalled
+# provider fails closed with a retryable provider_error instead of hanging the call.
+LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "30"))

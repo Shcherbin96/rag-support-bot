@@ -1,5 +1,8 @@
 """Unit tests for Telegram bot helper behavior."""
 
+import asyncio
+from types import SimpleNamespace
+
 import pytest
 
 import rag_bot.bot as bot_module
@@ -60,3 +63,29 @@ def test_validate_runtime_config_accepts_required_values(monkeypatch):
     monkeypatch.setattr(bot_module.config, "LLM_API_KEY_ENV", "NVIDIA_API_KEY")
 
     bot_module._validate_runtime_config()
+
+
+def test_on_question_survives_fallback_send_failure(monkeypatch):
+    # answer() succeeds, but every Telegram send raises (e.g. network down):
+    # the normal reply fails, and so must the fallback send. The handler must
+    # swallow both and not raise out of on_question.
+    monkeypatch.setattr(
+        bot_module,
+        "answer",
+        lambda question: {"text": "ok", "route": "smalltalk", "sources": [], "error_type": ""},
+    )
+
+    class _Bot:
+        async def send_chat_action(self, *args, **kwargs):
+            return None
+
+    class _Msg:
+        text = "hi"
+        chat = SimpleNamespace(id=1)
+        bot = _Bot()
+
+        async def answer(self, text):
+            raise RuntimeError("telegram unreachable")
+
+    # Must complete without propagating an exception.
+    asyncio.run(bot_module.on_question(_Msg()))

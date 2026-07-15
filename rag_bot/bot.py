@@ -94,7 +94,12 @@ async def on_question(message: Message) -> None:
             await message.answer(part)
     except Exception:
         log.exception("failed_question fingerprint=%s", fingerprint)
-        await message.answer(FALLBACK_MESSAGE)
+        # The fallback send can itself fail (e.g. Telegram unreachable). Guard it
+        # so a network blip does not raise out of the handler as an unhandled error.
+        try:
+            await message.answer(FALLBACK_MESSAGE)
+        except Exception:
+            log.exception("failed_to_send_fallback fingerprint=%s", fingerprint)
 
 
 async def main() -> None:
