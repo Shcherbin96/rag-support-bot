@@ -49,6 +49,14 @@
   question: "Hi, how can I return an order?"
   expect_route: factual_in_domain
 
+- id: en_contact_reach
+  question: "How can I reach you?"
+  expect_route: factual_in_domain
+
+- id: en_contact_touch
+  question: "How do I get in touch?"
+  expect_route: factual_in_domain
+
 - id: en_product_stock
   question: "Is this product in stock?"
   expect_route: factual_in_domain
@@ -87,6 +95,18 @@
 
 - id: en_border_hard_negative
   question: "How do I cross the border?"
+  expect_route: out_of_domain
+
+- id: en_contact_police
+  question: "How do I contact the police?"
+  expect_route: out_of_domain
+
+- id: en_contact_emergency
+  question: "How do I contact emergency services?"
+  expect_route: out_of_domain
+
+- id: en_government_contacts
+  question: "Where are government contacts?"
   expect_route: out_of_domain
 
 - id: ru_other_store
