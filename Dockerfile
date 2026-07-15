@@ -1,15 +1,15 @@
-# Образ для деплоя бота (любой хост: Fly.io, Render, VPS...)
+# Demo bot image for hosts such as Fly.io, Render, or a VPS.
 FROM python:3.12-slim
 
 RUN pip install --no-cache-dir uv
 WORKDIR /app
 COPY . .
 
-# ставим зависимости
+# Install project dependencies.
 RUN uv sync
 
-# строим векторный индекс на этапе сборки (заодно скачается модель эмбеддингов)
+# Build the vector index during image build. This also downloads the embedding model.
 RUN uv run python -m rag_bot.ingestion
 
-# ключи передаются как переменные окружения при запуске контейнера
+# Runtime secrets are passed through environment variables when the container starts.
 CMD ["uv", "run", "python", "-m", "rag_bot.bot"]
