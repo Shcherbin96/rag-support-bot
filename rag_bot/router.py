@@ -26,7 +26,10 @@ class QueryRoute(StrEnum):
     ADVERSARIAL = "adversarial"
 
 
-IN_DOMAIN_MIN = float(os.getenv("ROUTER_IN_DOMAIN_MIN", "0.45"))
+# Calibrated against eval/routing_set.yaml: in-domain queries score >= ~0.42 to
+# their nearest domain anchor; out-of-domain queries that also score high are
+# caught by MARGIN (closer to an off-topic anchor). See docs/design/router-redesign.md.
+IN_DOMAIN_MIN = float(os.getenv("ROUTER_IN_DOMAIN_MIN", "0.42"))
 MARGIN = float(os.getenv("ROUTER_MARGIN", "0.05"))
 SMALLTALK_MIN = float(os.getenv("ROUTER_SMALLTALK_MIN", "0.50"))
 
@@ -73,11 +76,13 @@ ANCHORS: dict[QueryRoute, list[str]] = {
         "How much is shipping?",
         "When will my order arrive?",
         "Which payment methods do you accept?",
+        "Do you accept Apple Pay or Google Pay?",
         "Can I pay with cash at pickup?",
         "Do you offer installment payments?",
         "Where is my receipt?",
         "How do I return an item?",
         "What is your refund policy?",
+        "My item arrived damaged, what should I do?",
         "What is the warranty on this product?",
         "How do rewards points work?",
         "Is there a discount for new customers?",
@@ -87,6 +92,10 @@ ANCHORS: dict[QueryRoute, list[str]] = {
         "Can I change or cancel my order?",
         "Do you ship internationally?",
         "Can I order a gift?",
+        "How can I reach you?",
+        "What is your phone number?",
+        "How do I track my package?",
+        "Do you work with businesses?",
     ],
     QueryRoute.OUT_OF_DOMAIN: [
         "What is the weather today?",
@@ -106,6 +115,9 @@ ANCHORS: dict[QueryRoute, list[str]] = {
         "Can I get investment advice?",
         "Where can I buy concert tickets?",
         "I need medical help.",
+        "When is the next football game?",
+        "Can you recommend a restaurant?",
+        "How do I book a flight?",
     ],
     QueryRoute.SMALLTALK: [
         "Hello",
@@ -144,7 +156,9 @@ def classify_query(text: str, embed_fn=None) -> QueryRoute:
 
     try:
         mats = _anchor_matrices(embed_fn)
-        query_vec = np.asarray(embed_fn([normalized]))[0]
+        # Embed the original-case text so query and (natural-case) anchors match;
+        # `normalized` is lowercased only for the adversarial phrase check above.
+        query_vec = np.asarray(embed_fn([text.strip()]))[0]
         sims = {route: float(np.max(mat @ query_vec)) for route, mat in mats.items()}
     except Exception:
         log.warning("router_embed_failed", exc_info=True)
