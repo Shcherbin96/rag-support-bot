@@ -192,3 +192,51 @@ def test_permanent_provider_error_is_not_retryable(monkeypatch):
 
     assert result["error_type"] == "provider_error"
     assert result["retryable"] is False
+
+
+def test_provider_timeout_is_marked_retryable(monkeypatch):
+    chunks = [
+        {"id": "chunk-1", "source": "dostavka.md", "distance": 0.2, "text": "Доставка стоит 350 рублей."},
+    ]
+
+    monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
+    monkeypatch.setattr(answer_module, "_client", lambda: _FailingClient(RuntimeError("Request timed out.")))
+
+    result = answer("Сколько стоит доставка?")
+
+    assert result["error_type"] == "provider_error"
+    assert result["retryable"] is True
+
+
+def test_llm_timeout_is_bounded_below_bot_wait():
+    # The bot wraps answer() in a 45s wait; the client timeout must fire first.
+    assert 0 < answer_module.config.LLM_TIMEOUT < 45
+
+
+def test_client_disables_sdk_retries(monkeypatch):
+    monkeypatch.setattr(answer_module.config, "LLM_API_KEY", "test-key")
+    monkeypatch.setattr(answer_module.config, "LLM_BASE_URL", "https://example.test/v1")
+
+    client = answer_module._client()
+
+    assert client.max_retries == 0
+
+
+def test_model_contract_rejection_reason_is_logged(monkeypatch, caplog):
+    chunks = [
+        {"id": "chunk-1", "source": "dostavka.md", "distance": 0.2, "text": "Доставка стоит 350 рублей."},
+    ]
+    payload = {
+        "answer": "Доставка стоит 99999 рублей.",
+        "citations": [{"chunk_id": "chunk-1", "quote": "Доставка стоит 350 рублей."}],
+    }
+
+    monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
+    monkeypatch.setattr(answer_module, "_client", lambda: _FakeClient(json.dumps(payload)))
+
+    with caplog.at_level("INFO", logger="domok-answer"):
+        result = answer("Сколько стоит доставка?")
+
+    assert result["error_type"] == "model_contract_error"
+    assert "model_contract_rejected" in caplog.text
+    assert "99999" in caplog.text
