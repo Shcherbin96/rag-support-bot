@@ -9,8 +9,9 @@ from aiogram.enums import ChatAction
 from aiogram.filters import CommandStart
 from aiogram.types import Message
 
-from rag_bot import config
+from rag_bot import config, embeddings
 from rag_bot.answer import answer
+from rag_bot.retrieval import retrieve
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("nestwell-bot")
@@ -100,8 +101,24 @@ async def on_question(message: Message) -> None:
             log.exception("failed_to_send_fallback fingerprint=%s", fingerprint)
 
 
+def _warm_up() -> None:
+    """Load the embedding model and index before polling so the first reply is fast.
+
+    Both the semantic router and retrieval load a sentence-transformers model on first
+    use; warming them here moves that cost to startup. Best-effort: a missing index or
+    model must not stop the bot from starting.
+    """
+    try:
+        embeddings.get_model()
+        retrieve("warm up", k=1)
+    except Exception:
+        log.warning("warmup_skipped", exc_info=True)
+
+
 async def main() -> None:
     _validate_runtime_config()
+    log.info("Warming up the embedding model...")
+    _warm_up()
     bot = Bot(config.TELEGRAM_BOT_TOKEN)
     log.info("Nestwell support bot started. Press Ctrl+C to stop.")
     await dp.start_polling(bot)
