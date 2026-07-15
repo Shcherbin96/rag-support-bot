@@ -17,15 +17,11 @@ from rag_bot import config
 from rag_bot.answer import answer
 
 REFUSAL_MARKERS = [
-    "не зна",
-    "нет информ",
-    "нет надёж",
-    "не могу",
-    "уточн",
-    "менеджер",
     "could not find",
     "cannot invent",
     "do not have reliable",
+    "only answer from",
+    "human support",
 ]
 TEST_SET = Path(__file__).parent / "test_set.yaml"
 RESULTS = Path(__file__).parent / "results.md"

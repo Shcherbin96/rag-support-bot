@@ -40,12 +40,12 @@ def test_out_of_domain_query_is_refused_before_retrieval(monkeypatch):
         raise AssertionError("retrieval should not be called")
 
     monkeypatch.setattr(answer_module, "retrieve", fail_retrieve)
-    result = answer("What is the weather in Moscow?")
+    result = answer("What is the weather today?")
 
     assert result["sources"] == []
     assert result["route"] == "out_of_domain"
     assert result["error_type"] == ""
-    assert "DomOk" in result["text"]
+    assert "Nestwell" in result["text"]
 
 
 def test_smalltalk_is_handled_before_retrieval(monkeypatch):
@@ -53,85 +53,85 @@ def test_smalltalk_is_handled_before_retrieval(monkeypatch):
         raise AssertionError("retrieval should not be called")
 
     monkeypatch.setattr(answer_module, "retrieve", fail_retrieve)
-    result = answer("Привет! Кто ты?")
+    result = answer("Hello, who are you?")
 
     assert result["sources"] == []
     assert result["route"] == "smalltalk"
     assert result["error_type"] == ""
-    assert "ДомОк" in result["text"]
+    assert "Nestwell" in result["text"]
 
 
 def test_mixed_greeting_and_question_uses_retrieval(monkeypatch):
     chunks = [
-        {"id": "chunk-1", "source": "dostavka.md", "distance": 0.2, "text": "Доставка стоит 350 рублей."},
+        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
     ]
     payload = {
-        "answer": "Доставка стоит 350 рублей.",
-        "citations": [{"chunk_id": "chunk-1", "quote": "Доставка стоит 350 рублей."}],
+        "answer": "Standard shipping costs $5.99.",
+        "citations": [{"chunk_id": "chunk-1", "quote": "Standard shipping costs $5.99."}],
     }
 
     monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
     monkeypatch.setattr(answer_module, "_client", lambda: _FakeClient(json.dumps(payload)))
 
-    result = answer("Привет, сколько стоит доставка?")
+    result = answer("Hi, how much is shipping?")
 
     assert result["route"] == "factual_in_domain"
-    assert result["sources"] == ["dostavka.md"]
+    assert result["sources"] == ["shipping.md"]
 
 
 def test_answer_uses_only_validated_cited_sources(monkeypatch):
     chunks = [
-        {"id": "chunk-1", "source": "dostavka.md", "distance": 0.2, "text": "Доставка стоит 350 рублей."},
-        {"id": "chunk-2", "source": "oplata.md", "distance": 0.4, "text": "Оплата картой или СБП."},
+        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
+        {"id": "chunk-2", "source": "payment.md", "distance": 0.4, "text": "We accept cards and PayPal."},
     ]
     payload = {
-        "answer": "Доставка стоит 350 рублей.",
-        "citations": [{"chunk_id": "chunk-1", "quote": "Доставка стоит 350 рублей."}],
+        "answer": "Standard shipping costs $5.99.",
+        "citations": [{"chunk_id": "chunk-1", "quote": "Standard shipping costs $5.99."}],
     }
 
     monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
     monkeypatch.setattr(answer_module, "_client", lambda: _FakeClient(json.dumps(payload)))
 
-    result = answer("Сколько стоит доставка?")
+    result = answer("How much is shipping?")
 
-    assert result["sources"] == ["dostavka.md"]
-    assert "Источники: dostavka.md" in result["text"]
-    assert "oplata.md" not in result["text"]
+    assert result["sources"] == ["shipping.md"]
+    assert "Sources: shipping.md" in result["text"]
+    assert "payment.md" not in result["text"]
     assert not result["error_type"]
 
 
 def test_invalid_model_citation_fails_closed(monkeypatch):
     chunks = [
-        {"id": "chunk-1", "source": "dostavka.md", "distance": 0.2, "text": "Доставка стоит 350 рублей."},
+        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
     ]
     payload = {
-        "answer": "Доставка стоит 350 рублей.",
-        "citations": [{"chunk_id": "not-retrieved", "quote": "Доставка стоит 350 рублей."}],
+        "answer": "Standard shipping costs $5.99.",
+        "citations": [{"chunk_id": "not-retrieved", "quote": "Standard shipping costs $5.99."}],
     }
 
     monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
     monkeypatch.setattr(answer_module, "_client", lambda: _FakeClient(json.dumps(payload)))
 
-    result = answer("Сколько стоит доставка?")
+    result = answer("How much is shipping?")
 
     assert result["sources"] == []
     assert result["error_type"] == "model_contract_error"
-    assert "не могу выдумывать" in result["text"]
+    assert "cannot invent" in result["text"]
 
 
 def test_answer_rejects_quote_not_present_in_cited_chunk(monkeypatch):
     chunks = [
-        {"id": "chunk-1", "source": "dostavka.md", "distance": 0.2, "text": "Доставка стоит 350 рублей."},
+        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
     ]
     payload = {
-        "answer": "Доставка стоит 350 рублей.",
-        "citations": [{"chunk_id": "chunk-1", "quote": "Доставка стоит 99999 рублей."}],
+        "answer": "Standard shipping costs $5.99.",
+        "citations": [{"chunk_id": "chunk-1", "quote": "Standard shipping costs $999.99."}],
     }
 
     monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
     monkeypatch.setattr(answer_module, "_client", lambda: _FakeClient(json.dumps(payload)))
 
-    result = answer("Сколько стоит доставка?")
+    result = answer("How much is shipping?")
 
     assert result["sources"] == []
     assert result["error_type"] == "model_contract_error"
@@ -139,17 +139,17 @@ def test_answer_rejects_quote_not_present_in_cited_chunk(monkeypatch):
 
 def test_answer_rejects_numeric_claim_not_present_in_evidence(monkeypatch):
     chunks = [
-        {"id": "chunk-1", "source": "dostavka.md", "distance": 0.2, "text": "Доставка стоит 350 рублей."},
+        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
     ]
     payload = {
-        "answer": "Доставка стоит 99999 рублей.",
-        "citations": [{"chunk_id": "chunk-1", "quote": "Доставка стоит 350 рублей."}],
+        "answer": "Standard shipping costs $999.99.",
+        "citations": [{"chunk_id": "chunk-1", "quote": "Standard shipping costs $5.99."}],
     }
 
     monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
     monkeypatch.setattr(answer_module, "_client", lambda: _FakeClient(json.dumps(payload)))
 
-    result = answer("Сколько стоит доставка?")
+    result = answer("How much is shipping?")
 
     assert result["sources"] == []
     assert result["error_type"] == "model_contract_error"
@@ -160,7 +160,7 @@ def test_retrieval_exception_fails_closed(monkeypatch):
         raise RuntimeError("embedding backend failed")
 
     monkeypatch.setattr(answer_module, "retrieve", broken_retrieve)
-    result = answer("Сколько стоит доставка?")
+    result = answer("How much is shipping?")
 
     assert result["sources"] == []
     assert result["error_type"] == "retrieval_error"
@@ -168,13 +168,13 @@ def test_retrieval_exception_fails_closed(monkeypatch):
 
 def test_transient_provider_error_is_marked_retryable(monkeypatch):
     chunks = [
-        {"id": "chunk-1", "source": "dostavka.md", "distance": 0.2, "text": "Доставка стоит 350 рублей."},
+        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
     ]
 
     monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
     monkeypatch.setattr(answer_module, "_client", lambda: _FailingClient(RuntimeError("429 rate limit")))
 
-    result = answer("Сколько стоит доставка?")
+    result = answer("How much is shipping?")
 
     assert result["error_type"] == "provider_error"
     assert result["retryable"] is True
@@ -182,13 +182,13 @@ def test_transient_provider_error_is_marked_retryable(monkeypatch):
 
 def test_permanent_provider_error_is_not_retryable(monkeypatch):
     chunks = [
-        {"id": "chunk-1", "source": "dostavka.md", "distance": 0.2, "text": "Доставка стоит 350 рублей."},
+        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
     ]
 
     monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
     monkeypatch.setattr(answer_module, "_client", lambda: _FailingClient(RuntimeError("invalid api key")))
 
-    result = answer("Сколько стоит доставка?")
+    result = answer("How much is shipping?")
 
     assert result["error_type"] == "provider_error"
     assert result["retryable"] is False
@@ -196,13 +196,13 @@ def test_permanent_provider_error_is_not_retryable(monkeypatch):
 
 def test_provider_timeout_is_marked_retryable(monkeypatch):
     chunks = [
-        {"id": "chunk-1", "source": "dostavka.md", "distance": 0.2, "text": "Доставка стоит 350 рублей."},
+        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
     ]
 
     monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
     monkeypatch.setattr(answer_module, "_client", lambda: _FailingClient(RuntimeError("Request timed out.")))
 
-    result = answer("Сколько стоит доставка?")
+    result = answer("How much is shipping?")
 
     assert result["error_type"] == "provider_error"
     assert result["retryable"] is True
@@ -224,19 +224,19 @@ def test_client_disables_sdk_retries(monkeypatch):
 
 def test_model_contract_rejection_reason_is_logged(monkeypatch, caplog):
     chunks = [
-        {"id": "chunk-1", "source": "dostavka.md", "distance": 0.2, "text": "Доставка стоит 350 рублей."},
+        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
     ]
     payload = {
-        "answer": "Доставка стоит 99999 рублей.",
-        "citations": [{"chunk_id": "chunk-1", "quote": "Доставка стоит 350 рублей."}],
+        "answer": "Standard shipping costs $999.99.",
+        "citations": [{"chunk_id": "chunk-1", "quote": "Standard shipping costs $5.99."}],
     }
 
     monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
     monkeypatch.setattr(answer_module, "_client", lambda: _FakeClient(json.dumps(payload)))
 
-    with caplog.at_level("INFO", logger="domok-answer"):
-        result = answer("Сколько стоит доставка?")
+    with caplog.at_level("INFO", logger="nestwell-answer"):
+        result = answer("How much is shipping?")
 
     assert result["error_type"] == "model_contract_error"
     assert "model_contract_rejected" in caplog.text
-    assert "99999" in caplog.text
+    assert "999.99" in caplog.text
