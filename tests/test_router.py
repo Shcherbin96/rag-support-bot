@@ -25,6 +25,8 @@ def test_routes_pure_smalltalk_before_retrieval(query):
         "How much is shipping?",
         "Which payment methods do you accept?",
         "This order has not arrived",
+        "How can I reach you?",
+        "How do I get in touch?",
         "Привет, сколько стоит доставка?",
         "Спасибо, а как вернуть товар?",
         "Есть ли у вас чайники?",
@@ -74,6 +76,9 @@ def test_routes_ecommerce_stock_and_availability_questions(query):
         "What is the weather in Moscow?",
         "I need help with cardiology",
         "How do I cross the border?",
+        "How do I contact the police?",
+        "How do I contact emergency services?",
+        "Where are government contacts?",
         "Расскажи про магазин Пятёрочка",
     ],
 )
