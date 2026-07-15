@@ -119,6 +119,6 @@ I only answer from the Nestwell store knowledge base: shipping, payments, return
 ## Notes for reviewers
 
 - The demo knowledge base is synthetic and intentionally small.
-- The router is deterministic and intentionally simple.
+- The router is an LLM-free semantic anchor gate (see `docs/design/router-redesign.md`), not a production intent classifier.
 - Exact quote validation is not a full semantic entailment checker.
 - Live Telegram availability depends on whether the bot process is currently running with valid `GEMINI_API_KEY` and `TELEGRAM_BOT_TOKEN` environment variables.

@@ -1,6 +1,6 @@
 # Design: Semantic query router
 
-Date: 2026-07-15 · Status: approved, pending implementation
+Date: 2026-07-15 · Status: implemented (merged in PR #13)
 
 ## Problem
 

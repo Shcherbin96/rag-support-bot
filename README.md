@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/Shcherbin96/rag-support-bot/actions/workflows/ci.yml/badge.svg)
 
-An English-language portfolio demo **RAG (Retrieval-Augmented Generation) support assistant** for Telegram. It answers customer-support questions from a Markdown knowledge base, uses a deterministic domain router before retrieval, validates model citations against retrieved chunk IDs and exact evidence quotes, and refuses unsupported questions instead of pretending to know.
+An English-language portfolio demo **RAG (Retrieval-Augmented Generation) support assistant** for Telegram. It answers customer-support questions from a Markdown knowledge base, uses an LLM-free semantic anchor router before retrieval, validates model citations against retrieved chunk IDs and exact evidence quotes, and refuses unsupported questions instead of pretending to know.
 
 Built as a demo for a fictional US home-goods store, **Nestwell**. The business domain is replaceable: swap the Markdown knowledge base, rebuild the index, and recalibrate retrieval/routing behavior for a new company.
 
@@ -20,7 +20,7 @@ The goal is not to make a chatbot that sounds confident. The goal is to make a s
 
 ## Key features
 
-- **Domain routing before retrieval** — pure small-talk, adversarial, out-of-domain, and factual support questions are separated before semantic search.
+- **LLM-free semantic routing before retrieval** — an anchor-similarity gate over the local embedding model separates small-talk, out-of-domain, and factual support questions, while adversarial prompt-injection is caught by a deterministic phrase check. No LLM call is made to route.
 - **RAG over business documents** — Markdown knowledge base → section chunks → embeddings → Chroma vector search.
 - **Retrieval relevance check** — accepted context is filtered by a configurable distance threshold.
 - **Structured answer contract** — the LLM must return JSON with an answer and citations containing `chunk_id` plus an exact supporting quote.
@@ -37,7 +37,7 @@ The goal is not to make a chatbot that sounds confident. The goal is to make a s
 ```text
 user message
    │
-   ├─► deterministic router
+   ├─► LLM-free semantic router (anchor-similarity gate; deterministic adversarial check)
    │      ├─ pure small-talk → direct response
    │      ├─ adversarial / out-of-domain → refusal
    │      └─ factual support question
@@ -62,7 +62,8 @@ Main modules:
 ```text
 rag_bot/
   config.py       # environment variables, provider settings, paths, retrieval threshold
-  router.py       # deterministic pre-retrieval query routing
+  router.py       # LLM-free semantic (anchor-similarity) query routing
+  embeddings.py   # shared, lazily loaded sentence-transformers model
   ingestion.py    # knowledge-base documents → chunks → embeddings → Chroma
   retrieval.py    # semantic search + relevance filtering
   answer.py       # structured grounded answer generation + citation validation
@@ -115,6 +116,8 @@ uv run python -m rag_bot.answer "How much is shipping?"
 uv run python -m rag_bot.bot
 ```
 
+> **After pulling changes** that touch the knowledge base (or after the Chroma collection name changes), rebuild the index with `uv run python -m rag_bot.ingestion` — otherwise the assistant fails closed with a missing-index refusal.
+
 ## Configuration
 
 | Variable | Required | Default | Purpose |
@@ -131,6 +134,9 @@ uv run python -m rag_bot.bot
 | `TOP_K` | No | `4` | Number of retrieved chunks. |
 | `RETRIEVAL_MAX_DISTANCE` | No | `1.2` | Maximum accepted chunk distance before that chunk is excluded from context. |
 | `LLM_TIMEOUT` | No | `30` | Per-request LLM timeout in seconds; kept below the bot's 45s wait so a stalled provider fails closed. |
+| `ROUTER_IN_DOMAIN_MIN` | No | `0.42` | Router: minimum cosine similarity to an in-domain anchor to accept a query as in-domain. |
+| `ROUTER_MARGIN` | No | `0.05` | Router: how much closer to an in-domain anchor than an out-of-domain anchor a query must be. |
+| `ROUTER_SMALLTALK_MIN` | No | `0.50` | Router: minimum similarity to a small-talk anchor to route as small-talk. |
 
 Example NVIDIA setup:
 
@@ -165,7 +171,8 @@ The project uses multiple guardrails:
 
 Known limitations:
 
-- The router is deterministic and intentionally simple; it should be replaced or augmented for broader production domains.
+- The router is an LLM-free semantic anchor-similarity gate, **not a production intent classifier**: it relies on curated anchor phrases and calibrated thresholds (`ROUTER_IN_DOMAIN_MIN`, `ROUTER_MARGIN`, `ROUTER_SMALLTALK_MIN`) and should be tuned or replaced for broader production domains.
+- The embedding model is loaded lazily on the first non-trivial message (for both routing and retrieval), so the first response after a fresh start can be slow.
 - Exact evidence-quote validation is stronger than chunk-ID membership, but it is still not a full entailment checker.
 - Vector-distance thresholding alone is not a reliable domain boundary, which is why routing and citation validation are separate layers.
 - The demo knowledge base is small and synthetic.
@@ -183,7 +190,7 @@ uv run python -m rag_bot.ingestion
 uv run pytest -q
 ```
 
-GitHub Actions runs dependency installation, index build, and pytest. Deterministic unit tests cover routing hard negatives, mixed greeting + factual queries, relevance checks, structured citation validation, evidence-quote validation, eval fail-fast behavior, provider configuration, Telegram helper behavior, and fail-closed paths. Optional live LLM tests are skipped without the selected provider API key.
+GitHub Actions runs dependency installation, index build, and pytest. Deterministic unit tests cover the router decision rule and adversarial detection, a labeled routing regression set, relevance checks, structured citation validation, evidence-quote validation, eval fail-fast behavior, provider configuration, Telegram helper behavior, and fail-closed paths. Optional live LLM tests are skipped without the selected provider API key.
 
 ## Docker
 
