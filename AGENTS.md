@@ -44,8 +44,8 @@ uv run pytest -q
 For retrieval-safety changes, also manually compare at least one in-knowledge-base query and one out-of-knowledge-base query:
 
 ```bash
-uv run python -m rag_bot.retrieval "сколько стоит доставка?"
-uv run python -m rag_bot.retrieval "сколько стоит Tesla Model 3?"
+uv run python -m rag_bot.retrieval "How much is shipping?"
+uv run python -m rag_bot.retrieval "How much is a Tesla Model 3?"
 ```
 
 ## Portfolio quality bar

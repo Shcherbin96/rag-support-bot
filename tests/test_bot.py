@@ -8,16 +8,15 @@ import pytest
 import rag_bot.bot as bot_module
 
 
-def test_greeting_is_english_first_with_russian_note():
+def test_greeting_is_english_and_names_the_store():
     assert bot_module.GREETING.startswith("👋 Hi.")
+    assert "Nestwell" in bot_module.GREETING
     assert "How much is shipping?" in bot_module.GREETING
-    assert "Russian is also supported" in bot_module.GREETING
-    assert "Сколько стоит доставка?" in bot_module.GREETING
 
 
-def test_fallback_is_bilingual():
+def test_fallback_message_is_english():
     assert "I could not process" in bot_module.FALLBACK_MESSAGE
-    assert "Не получилось" in bot_module.FALLBACK_MESSAGE
+    assert "human support agent" in bot_module.FALLBACK_MESSAGE
 
 
 def test_split_for_telegram_keeps_short_message():

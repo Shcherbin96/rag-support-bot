@@ -16,13 +16,16 @@ needs_key = pytest.mark.skipif(
 
 @needs_key
 def test_grounded_answer_has_correct_source():
-    result = answer("сколько стоит доставка?")
+    result = answer("How much is shipping?")
     assert result["sources"]
-    assert any("dostavka" in source for source in result["sources"])
+    assert any("shipping" in source for source in result["sources"])
 
 
 @needs_key
 def test_unknown_fact_is_refused():
-    result = answer("во сколько закрывается ваш склад в Казани?")
+    result = answer("What time does your Chicago warehouse close?")
     lowered = result["text"].lower()
-    assert any(marker in lowered for marker in ["не зна", "нет", "уточн", "менеджер"])
+    assert any(
+        marker in lowered
+        for marker in ["could not find", "cannot invent", "do not have reliable", "only answer from"]
+    )

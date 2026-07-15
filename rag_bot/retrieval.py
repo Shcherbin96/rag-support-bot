@@ -60,7 +60,7 @@ def accepted_chunks(
 if __name__ == "__main__":
     import sys
 
-    question = " ".join(sys.argv[1:]) or "сколько стоит доставка?"
+    question = " ".join(sys.argv[1:]) or "How much is shipping?"
     print(f"Question: {question}\n")
     for item in retrieve(question):
         print(f"[{item['id']}] {item['source']} distance={item['distance']:.4f}")

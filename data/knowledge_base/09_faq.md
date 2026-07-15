@@ -1,19 +1,19 @@
-# Частые вопросы (FAQ)
+# Frequently Asked Questions (FAQ)
 
-**Можно ли изменить или отменить заказ?**
-Да, пока заказ не передан в доставку. Напишите в поддержку номер заказа.
+**Can I change or cancel my order?**
+Yes, as long as it has not shipped yet. Contact support with your order number.
 
-**Заказ пришёл не полностью / не тот товар.**
-Сообщите в поддержку с фото — оперативно дошлём недостающее или заменим за наш счёт.
+**My order arrived incomplete or with the wrong item.**
+Send support a photo and we will quickly reship the missing item or replace it at our cost.
 
-**Есть ли товар в наличии?**
-Наличие указано на странице товара. Если товара нет — можно оформить уведомление о поступлении.
+**Is a product in stock?**
+Stock is shown on each product page. If an item is out of stock, you can set a back-in-stock alert.
 
-**Доставляете ли за границу?**
-Нет, доставка только по России.
+**Do you ship internationally?**
+No. We ship within the continental US only.
 
-**Можно ли купить в подарок?**
-Да, при оформлении можно указать доставку на другой адрес и добавить подарочную упаковку.
+**Can I buy a gift?**
+Yes. At checkout you can ship to a different address and add gift wrapping.
 
-**Работаете ли с юрлицами?**
-Да, возможна оплата по счёту и закрывающие документы — напишите в поддержку.
+**Do you work with businesses?**
+Yes. We offer invoicing and business receipts — contact support.

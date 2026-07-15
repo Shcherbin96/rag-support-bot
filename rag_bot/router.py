@@ -19,7 +19,7 @@ class QueryRoute(StrEnum):
     ADVERSARIAL = "adversarial"
 
 
-_WORD_RE = re.compile(r"[a-zа-я0-9]+", re.IGNORECASE)
+_WORD_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
 
 SMALLTALK_TOKENS = {
     "hi",
@@ -27,11 +27,7 @@ SMALLTALK_TOKENS = {
     "hey",
     "thanks",
     "thankyou",
-    "привет",
-    "здравствуй",
-    "здравствуйте",
-    "спасибо",
-    "благодарю",
+    "thx",
 }
 
 SMALLTALK_PHRASES = {
@@ -40,10 +36,7 @@ SMALLTALK_PHRASES = {
     "good evening",
     "thank you",
     "who are you",
-    "добрый день",
-    "доброе утро",
-    "добрый вечер",
-    "кто ты",
+    "what can you do",
 }
 
 # Phrase-level support intents that do not necessarily contain an exact domain token.
@@ -57,17 +50,21 @@ DOMAIN_PHRASES = {
     "contact you",
 }
 
-# Exact English support-domain tokens. Exact matching avoids false positives such
-# as ``order`` in ``border`` and ``card`` in ``cardiology``.
-EN_DOMAIN_TOKENS = {
+# Exact support-domain tokens. Exact matching avoids false positives such as
+# ``order`` in ``border`` and ``card`` in ``cardiology``.
+DOMAIN_TOKENS = {
     "delivery",
     "deliver",
     "shipping",
     "ship",
+    "shipped",
     "pickup",
     "courier",
+    "tracking",
+    "track",
     "order",
     "orders",
+    "checkout",
     "payment",
     "payments",
     "pay",
@@ -88,18 +85,22 @@ EN_DOMAIN_TOKENS = {
     "availability",
     "available",
     "stock",
-    "bonus",
-    "bonuses",
+    "rewards",
+    "reward",
+    "points",
     "cashback",
     "discount",
     "discounts",
     "promo",
     "promocode",
+    "coupon",
+    "sale",
     "support",
     "contact",
     "contacts",
     "phone",
     "email",
+    "chat",
     "customer",
     "catalog",
     "catalogue",
@@ -107,9 +108,15 @@ EN_DOMAIN_TOKENS = {
     "kettles",
     "lamp",
     "lamps",
+    "blender",
+    "toaster",
     "textile",
     "textiles",
-    "vacuum",
+    "bedding",
+    "towel",
+    "towels",
+    "cookware",
+    "decor",
     "hours",
     "schedule",
     "working",
@@ -117,83 +124,8 @@ EN_DOMAIN_TOKENS = {
     "address",
     "gift",
     "business",
+    "businesses",
     "company",
-}
-
-# Exact Russian support-domain tokens that are too risky for prefix matching.
-RU_DOMAIN_TOKENS = {
-    "наличными",
-    "наличные",
-    "рассрочка",
-    "рассрочку",
-    "рассрочки",
-    "долями",
-    "чек",
-    "чеки",
-    "электронный",
-    "электронного",
-    "телефон",
-    "почта",
-    "email",
-    "телеграм",
-    "сдэк",
-    "пвз",
-    "юрлицами",
-    "юрлиц",
-    "счет",
-    "счета",
-    "счету",
-    "документы",
-    "подарок",
-    "подарочную",
-    "упаковку",
-    "адрес",
-    "адреса",
-    "акция",
-    "акции",
-    "акцию",
-    "карта",
-    "картой",
-    "карты",
-    "карту",
-    "сбп",
-    "часы",
-    "часов",
-}
-
-# Safer Russian stems for common inflections. Do not add very short or ambiguous
-# prefixes here: they can create false accepts such as ``час`` → ``часто``.
-RU_DOMAIN_PREFIXES = {
-    "достав",
-    "самовывоз",
-    "курьер",
-    "заказ",
-    "оплат",
-    "возврат",
-    "вернуть",
-    "обмен",
-    "гарант",
-    "товар",
-    "бонус",
-    "кэшбэк",
-    "кешбэк",
-    "скидк",
-    "промокод",
-    "поддерж",
-    "менеджер",
-    "контакт",
-    "связ",
-    "домок",
-    "покупател",
-    "каталог",
-    "чайник",
-    "ламп",
-    "текстил",
-    "пылесос",
-    "работа",
-    "рабоч",
-    "изменить",
-    "отменить",
 }
 
 ADVERSARIAL_PHRASES = {
@@ -203,27 +135,24 @@ ADVERSARIAL_PHRASES = {
     "ignore earlier",
     "ignore all previous",
     "ignore all earlier",
+    "ignore your instructions",
     "reveal prompt",
+    "reveal your prompt",
     "show prompt",
     "print prompt",
     "hidden prompt",
     "system instructions",
     "developer instructions",
-    "системный промпт",
-    "покажи промпт",
-    "раскрой промпт",
-    "скрытый промпт",
-    "игнорируй предыдущ",
-    "игнорируй все предыдущ",
 }
 
 OTHER_COMPANY_MARKERS = {
-    "пятерочка",
-    "пятерочке",
-    "магнит",
-    "ozon",
-    "wildberries",
     "amazon",
+    "walmart",
+    "costco",
+    "wayfair",
+    "ikea",
+    "etsy",
+    "ebay",
 }
 
 # Multi-word unrelated domains. These are checked before positive domain markers
@@ -237,19 +166,16 @@ HARD_NEGATIVE_PHRASES = {
     "learn python",
     "quantum physics",
     "recommend a movie",
+    "movie recommendation",
     "contact the police",
     "contact police",
-    "police contact",
-    "police contacts",
     "emergency services",
     "government contacts",
-    "contact government",
     "contact the government",
-    "где купить билеты",
-    "совет по инвестициям",
-    "следующий матч",
-    "приготовить борщ",
-    "посмотреть в кино",
+    "cross the border",
+    "next match",
+    "how to cook",
+    "investment advice",
 }
 
 HARD_NEGATIVE_TOKENS = {
@@ -259,6 +185,7 @@ HARD_NEGATIVE_TOKENS = {
     "border",
     "stocks",
     "crypto",
+    "cryptocurrency",
     "bitcoin",
     "medicine",
     "doctor",
@@ -275,57 +202,20 @@ HARD_NEGATIVE_TOKENS = {
     "physics",
     "paris",
     "movie",
+    "movies",
     "concert",
-    "tickets",
-    "match",
-    "дождь",
-    "дождя",
-    "погода",
-    "погоде",
-    "тесла",
-    "кардиология",
-    "медицина",
-    "врач",
-    "диагноз",
-    "полиция",
-    "полицию",
-    "экстренные",
-    "госуслуги",
-    "правительство",
-    "граница",
-    "границу",
-    "акционерное",
-    "акционерный",
-    "общество",
-    "картография",
-    "картографию",
-    "верное",
-    "верный",
-    "верная",
-    "борщ",
-    "кино",
-    "инвестициям",
-    "инвестиции",
-    "билеты",
-    "концерт",
-    "матч",
+    "invest",
+    "investing",
+    "investment",
+    "investments",
 }
 
-HARD_NEGATIVE_PREFIXES = {
-    "дожд",
-    "погод",
-    "акционер",
-    "картограф",
-    "медицин",
-    "диагноз",
-    "крипт",
-    "биткоин",
-}
+HARD_NEGATIVE_PREFIXES: set[str] = set()
 
 
 def _normalize(text: str) -> str:
     """Normalize text for deterministic matching."""
-    return " ".join(text.lower().replace("ё", "е").split())
+    return " ".join(text.lower().split())
 
 
 def _tokens(normalized: str) -> list[str]:
@@ -347,11 +237,7 @@ def _has_domain_marker(normalized: str, tokens: list[str]) -> bool:
     """Return whether tokenized text contains a known support-domain marker."""
     if _has_phrase(normalized, DOMAIN_PHRASES):
         return True
-    if any(token in EN_DOMAIN_TOKENS for token in tokens):
-        return True
-    if any(token in RU_DOMAIN_TOKENS for token in tokens):
-        return True
-    return _has_prefix(tokens, RU_DOMAIN_PREFIXES)
+    return any(token in DOMAIN_TOKENS for token in tokens)
 
 
 def _has_hard_negative(normalized: str, tokens: list[str]) -> bool:
