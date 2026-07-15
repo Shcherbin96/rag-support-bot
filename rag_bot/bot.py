@@ -103,7 +103,7 @@ async def on_question(message: Message) -> None:
 async def main() -> None:
     _validate_runtime_config()
     bot = Bot(config.TELEGRAM_BOT_TOKEN)
-    log.info("DomOk support bot started. Press Ctrl+C to stop.")
+    log.info("Nestwell support bot started. Press Ctrl+C to stop.")
     await dp.start_polling(bot)
 
 
