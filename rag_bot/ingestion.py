@@ -7,7 +7,7 @@ from chromadb.utils import embedding_functions
 
 from rag_bot import config
 
-COLLECTION = "domok"
+COLLECTION = "nestwell"
 
 
 def load_chunks(kb_dir: Path) -> list[dict]:
