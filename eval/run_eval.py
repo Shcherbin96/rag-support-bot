@@ -51,7 +51,7 @@ def _ensure_eval_can_run() -> None:
     if os.getenv("EVAL_OFFLINE") == "1":
         return
     raise SystemExit(
-        "GEMINI_API_KEY is required for live eval. "
+        f"{config.LLM_API_KEY_ENV} is required for live eval with LLM_PROVIDER={config.LLM_PROVIDER}. "
         "Set EVAL_OFFLINE=1 only when intentionally testing offline/refusal behavior."
     )
 
@@ -192,7 +192,10 @@ def main() -> None:
     cases = yaml.safe_load(TEST_SET.read_text(encoding="utf-8"))
     print(f"Cases: {len(cases)} · models: {len(config.EVAL_MODELS)}\n")
     if os.getenv("EVAL_OFFLINE") == "1" and not config.LLM_API_KEY:
-        print("Offline eval mode enabled without GEMINI_API_KEY. Provider-backed cases are expected to fail.\n")
+        print(
+            f"Offline eval mode enabled without {config.LLM_API_KEY_ENV}. "
+            "Provider-backed cases are expected to fail.\n"
+        )
 
     rows = []
     for model in config.EVAL_MODELS:
