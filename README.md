@@ -26,6 +26,7 @@ The goal is not to make a chatbot that sounds confident. The goal is to make a s
 - **Structured answer contract** — the LLM must return JSON with an answer and citations containing `chunk_id` plus an exact supporting quote.
 - **Validated citations** — citations are accepted only if they reference retrieved chunk IDs and the quoted evidence appears in the cited chunk.
 - **Fail-closed behavior** — invalid JSON, missing citations, invalid citations, missing index, or model errors return a refusal instead of an unsupported answer.
+- **Provider-switchable LLM client** — Gemini is the default, and NVIDIA NIM can be selected with environment variables without changing RAG code.
 - **English-first Telegram UX** — `/start` and examples are written for an international reviewer, with Russian supported for selected demo scenarios.
 - **Telegram interface** — `aiogram` bot with timeout, concurrency limit, privacy-safer logging, and bilingual fallback message.
 - **Evaluation harness** — test-set based evaluation for grounded answers, refusals, small-talk, hallucination count, runtime/model errors, and per-case results.
@@ -45,7 +46,8 @@ Chroma retrieval over Markdown knowledge base
    │
    ├─ filter accepted chunks by distance threshold
    ▼
-answer agent ──► LLM via OpenAI-compatible Gemini client
+answer agent ──► OpenAI-compatible LLM client
+   │             providers: Gemini default, NVIDIA NIM optional
    │             output contract:
    │             {"answer":"...","citations":[{"chunk_id":"...","quote":"..."}]}
    ▼
@@ -59,7 +61,7 @@ Main modules:
 
 ```text
 rag_bot/
-  config.py       # environment variables, model settings, paths, retrieval threshold
+  config.py       # environment variables, provider settings, paths, retrieval threshold
   router.py       # deterministic pre-retrieval query routing
   ingestion.py    # knowledge-base documents → chunks → embeddings → Chroma
   retrieval.py    # semantic search + relevance filtering
@@ -73,7 +75,7 @@ tests/                 # pytest tests
 
 ## Tech stack
 
-Python 3.12 · Chroma · `sentence-transformers` multilingual embeddings · Google Gemini via OpenAI-compatible API · `aiogram` 3 · `pytest` · `uv` · GitHub Actions · Docker.
+Python 3.12 · Chroma · `sentence-transformers` multilingual embeddings · Gemini / NVIDIA NIM via OpenAI-compatible API · `aiogram` 3 · `pytest` · `uv` · GitHub Actions · Docker.
 
 ## Demo questions
 
@@ -107,7 +109,8 @@ uv sync --dev
 
 # 2. Add runtime keys
 cp .env.example .env
-# Fill GEMINI_API_KEY and TELEGRAM_BOT_TOKEN when you want live LLM / Telegram behavior.
+# Fill TELEGRAM_BOT_TOKEN and either GEMINI_API_KEY or NVIDIA_API_KEY.
+# Default provider is Gemini. To use NVIDIA NIM, set LLM_PROVIDER=nvidia.
 
 # 3. Build the local vector index
 uv run python -m rag_bot.ingestion
@@ -115,10 +118,10 @@ uv run python -m rag_bot.ingestion
 # 4. Test retrieval without an LLM key
 uv run python -m rag_bot.retrieval "How much is shipping?"
 
-# 5. Ask the answer agent from CLI; requires GEMINI_API_KEY
+# 5. Ask the answer agent from CLI; requires the selected provider API key
 uv run python -m rag_bot.answer "How much is shipping?"
 
-# 6. Run the Telegram bot; requires GEMINI_API_KEY and TELEGRAM_BOT_TOKEN
+# 6. Run the Telegram bot; requires TELEGRAM_BOT_TOKEN and the selected provider API key
 uv run python -m rag_bot.bot
 ```
 
@@ -126,12 +129,28 @@ uv run python -m rag_bot.bot
 
 | Variable | Required | Default | Purpose |
 |---|---:|---:|---|
-| `GEMINI_API_KEY` | For LLM calls | empty | Gemini API key used through the OpenAI-compatible client. |
+| `LLM_PROVIDER` | No | `gemini` | Selects `gemini` or `nvidia`. |
+| `GEMINI_API_KEY` | When `LLM_PROVIDER=gemini` | empty | Gemini API key used through the OpenAI-compatible client. |
+| `GEMINI_MODEL` | No | `gemini-2.5-flash-lite` | Default Gemini answer model. |
+| `NVIDIA_API_KEY` | When `LLM_PROVIDER=nvidia` | empty | NVIDIA NIM API key from NVIDIA Build. |
+| `NVIDIA_BASE_URL` | No | `https://integrate.api.nvidia.com/v1` | NVIDIA NIM OpenAI-compatible base URL. |
+| `NVIDIA_MODEL` | No | `nvidia/llama-3.1-nemotron-nano-8b-v1` | NVIDIA model ID copied from NVIDIA Build. |
+| `ANSWER_MODEL` | No | provider default | Optional override for the selected answer model. |
+| `EVAL_MODELS` | No | provider default(s) | Optional comma-separated model list for eval. |
 | `TELEGRAM_BOT_TOKEN` | For Telegram bot | empty | Telegram bot token from BotFather. |
 | `TOP_K` | No | `4` | Number of retrieved chunks. |
 | `RETRIEVAL_MAX_DISTANCE` | No | `1.2` | Maximum accepted chunk distance before that chunk is excluded from context. |
 
-The CI workflow is designed to pass without real secrets. Live LLM tests are skipped when `GEMINI_API_KEY` is absent.
+Example NVIDIA setup:
+
+```env
+LLM_PROVIDER=nvidia
+NVIDIA_API_KEY=your_nvidia_key_here
+NVIDIA_MODEL=nvidia/llama-3.1-nemotron-nano-8b-v1
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+```
+
+The CI workflow is designed to pass without real secrets. Live LLM tests are skipped when the selected provider API key is absent.
 
 ## Evaluation
 
@@ -173,7 +192,7 @@ uv run python -m rag_bot.ingestion
 uv run pytest -q
 ```
 
-GitHub Actions runs dependency installation, index build, and pytest. Deterministic unit tests cover routing hard negatives, mixed greeting + factual queries, relevance checks, structured citation validation, evidence-quote validation, eval fail-fast behavior, Telegram helper behavior, and fail-closed paths. Optional live LLM tests are skipped without `GEMINI_API_KEY`.
+GitHub Actions runs dependency installation, index build, and pytest. Deterministic unit tests cover routing hard negatives, mixed greeting + factual queries, relevance checks, structured citation validation, evidence-quote validation, eval fail-fast behavior, provider configuration, Telegram helper behavior, and fail-closed paths. Optional live LLM tests are skipped without the selected provider API key.
 
 ## Docker
 
@@ -192,6 +211,7 @@ This repository demonstrates practical AI automation skills:
 - adding deterministic routing before retrieval;
 - validating LLM citations instead of trusting plain text;
 - separating deterministic safety logic from LLM behavior;
+- switching between OpenAI-compatible LLM providers through configuration;
 - writing CI-friendly mocked tests for AI workflows;
 - documenting trade-offs and limitations clearly;
 - packaging an AI assistant demo so it can be reviewed by non-Russian hiring teams.
