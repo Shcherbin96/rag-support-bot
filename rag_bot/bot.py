@@ -55,8 +55,10 @@ def _validate_runtime_config() -> None:
     missing = []
     if not config.TELEGRAM_BOT_TOKEN:
         missing.append("TELEGRAM_BOT_TOKEN")
-    if not config.LLM_API_KEY:
-        missing.append("GEMINI_API_KEY")
+    if config.LLM_PROVIDER not in config.SUPPORTED_LLM_PROVIDERS:
+        missing.append("LLM_PROVIDER must be one of: gemini, nvidia")
+    elif not config.LLM_API_KEY:
+        missing.append(config.LLM_API_KEY_ENV)
     if missing:
         raise SystemExit(f"Missing required environment variables: {', '.join(missing)}")
 
