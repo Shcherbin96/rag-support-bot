@@ -4,7 +4,7 @@ The project no longer treats raw vector distance as the only safety boundary.
 The current demo pipeline uses layered checks:
 
 ```text
-query → deterministic router → retrieval → distance-based chunk filtering → structured answer → citation validation
+query → semantic router (anchor gate) → retrieval → distance-based chunk filtering → structured answer → citation validation
 ```
 
 ## Why this matters
