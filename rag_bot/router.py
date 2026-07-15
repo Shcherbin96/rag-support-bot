@@ -46,6 +46,17 @@ SMALLTALK_PHRASES = {
     "кто ты",
 }
 
+# Phrase-level support intents that do not necessarily contain an exact domain token.
+# Keep this list narrow: broad verbs like "reach" or "touch" are intentionally not
+# added as standalone tokens.
+DOMAIN_PHRASES = {
+    "reach you",
+    "reach support",
+    "get in touch",
+    "contact support",
+    "contact you",
+}
+
 # Exact English support-domain tokens. Exact matching avoids false positives such
 # as ``order`` in ``border`` and ``card`` in ``cardiology``.
 EN_DOMAIN_TOKENS = {
@@ -226,6 +237,14 @@ HARD_NEGATIVE_PHRASES = {
     "learn python",
     "quantum physics",
     "recommend a movie",
+    "contact the police",
+    "contact police",
+    "police contact",
+    "police contacts",
+    "emergency services",
+    "government contacts",
+    "contact government",
+    "contact the government",
     "где купить билеты",
     "совет по инвестициям",
     "следующий матч",
@@ -244,6 +263,9 @@ HARD_NEGATIVE_TOKENS = {
     "medicine",
     "doctor",
     "diagnosis",
+    "police",
+    "emergency",
+    "government",
     "football",
     "soccer",
     "recipe",
@@ -265,6 +287,11 @@ HARD_NEGATIVE_TOKENS = {
     "медицина",
     "врач",
     "диагноз",
+    "полиция",
+    "полицию",
+    "экстренные",
+    "госуслуги",
+    "правительство",
     "граница",
     "границу",
     "акционерное",
@@ -316,8 +343,10 @@ def _has_prefix(tokens: list[str], prefixes: set[str]) -> bool:
     return any(token.startswith(prefix) for token in tokens for prefix in prefixes)
 
 
-def _has_domain_marker(tokens: list[str]) -> bool:
+def _has_domain_marker(normalized: str, tokens: list[str]) -> bool:
     """Return whether tokenized text contains a known support-domain marker."""
+    if _has_phrase(normalized, DOMAIN_PHRASES):
+        return True
     if any(token in EN_DOMAIN_TOKENS for token in tokens):
         return True
     if any(token in RU_DOMAIN_TOKENS for token in tokens):
@@ -357,7 +386,7 @@ def classify_query(text: str) -> QueryRoute:
     if _has_hard_negative(normalized, tokens):
         return QueryRoute.OUT_OF_DOMAIN
 
-    if _has_domain_marker(tokens):
+    if _has_domain_marker(normalized, tokens):
         return QueryRoute.FACTUAL_IN_DOMAIN
 
     if _has_phrase(normalized, SMALLTALK_PHRASES) or any(token in SMALLTALK_TOKENS for token in tokens):
