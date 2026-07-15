@@ -168,3 +168,32 @@
 - id: smalltalk_hi
   question: "Hi there"
   expect_route: smalltalk
+
+# Paraphrase cases the keyword router missed — the semantic gate should catch these.
+- id: paraphrase_parcel_friday
+  question: "Will my parcel arrive by Friday?"
+  expect_route: factual_in_domain
+
+- id: paraphrase_apple_pay
+  question: "Do you take Apple Pay?"
+  expect_route: factual_in_domain
+
+- id: paraphrase_gift
+  question: "Can I send this as a present to a friend?"
+  expect_route: factual_in_domain
+
+- id: paraphrase_broken_item
+  question: "The blender I received is broken, what now?"
+  expect_route: factual_in_domain
+
+- id: paraphrase_track
+  question: "How do I know where my package is?"
+  expect_route: factual_in_domain
+
+- id: ood_restaurant
+  question: "Can you recommend a good restaurant nearby?"
+  expect_route: out_of_domain
+
+- id: ood_flight
+  question: "How do I book a flight to New York?"
+  expect_route: out_of_domain

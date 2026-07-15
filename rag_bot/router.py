@@ -1,13 +1,24 @@
-"""Deterministic query routing before retrieval and LLM calls.
+"""Semantic query routing before retrieval and LLM calls.
 
-The router blocks clearly unsafe or unrelated messages before retrieval, but it is
-not intended to answer every domain question by itself. Explicit ecommerce and
-support markers reach retrieval, where distance filtering and evidence validation
-make the final decision.
+Adversarial prompt-injection is caught by a deterministic phrase check; every other
+message is routed by cosine similarity between its embedding and curated per-route
+anchor phrases. In-domain questions still pass through retrieval, where distance
+filtering and citation validation make the final decision. Uncertain messages route
+to out-of-domain (fail-closed).
 """
 
+from collections.abc import Callable
 from enum import StrEnum
-import re
+import logging
+import os
+
+import numpy as np
+
+from rag_bot import embeddings
+
+EmbedFn = Callable[[list[str]], np.ndarray]
+
+log = logging.getLogger("nestwell-router")
 
 
 class QueryRoute(StrEnum):
@@ -19,114 +30,22 @@ class QueryRoute(StrEnum):
     ADVERSARIAL = "adversarial"
 
 
-_WORD_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
+# Calibrated against eval/routing_set.yaml: in-domain queries score >= ~0.42 to
+# their nearest domain anchor; out-of-domain queries that also score high are
+# caught by MARGIN (closer to an off-topic anchor). See docs/design/router-redesign.md.
+IN_DOMAIN_MIN = float(os.getenv("ROUTER_IN_DOMAIN_MIN", "0.42"))
+MARGIN = float(os.getenv("ROUTER_MARGIN", "0.05"))
+SMALLTALK_MIN = float(os.getenv("ROUTER_SMALLTALK_MIN", "0.50"))
 
-SMALLTALK_TOKENS = {
-    "hi",
-    "hello",
-    "hey",
-    "thanks",
-    "thankyou",
-    "thx",
-}
 
-SMALLTALK_PHRASES = {
-    "good morning",
-    "good afternoon",
-    "good evening",
-    "thank you",
-    "who are you",
-    "what can you do",
-}
+def _decide(s_small: float, s_in: float, s_out: float) -> QueryRoute:
+    """Route from per-route best cosine similarities (fail-closed)."""
+    if s_small >= SMALLTALK_MIN and s_small >= s_in and s_small >= s_out:
+        return QueryRoute.SMALLTALK
+    if s_in >= IN_DOMAIN_MIN and (s_in - s_out) >= MARGIN:
+        return QueryRoute.FACTUAL_IN_DOMAIN
+    return QueryRoute.OUT_OF_DOMAIN
 
-# Phrase-level support intents that do not necessarily contain an exact domain token.
-# Keep this list narrow: broad verbs like "reach" or "touch" are intentionally not
-# added as standalone tokens.
-DOMAIN_PHRASES = {
-    "reach you",
-    "reach support",
-    "get in touch",
-    "contact support",
-    "contact you",
-}
-
-# Exact support-domain tokens. Exact matching avoids false positives such as
-# ``order`` in ``border`` and ``card`` in ``cardiology``.
-DOMAIN_TOKENS = {
-    "delivery",
-    "deliver",
-    "shipping",
-    "ship",
-    "shipped",
-    "pickup",
-    "courier",
-    "tracking",
-    "track",
-    "order",
-    "orders",
-    "checkout",
-    "payment",
-    "payments",
-    "pay",
-    "card",
-    "cash",
-    "installment",
-    "installments",
-    "receipt",
-    "invoice",
-    "return",
-    "returns",
-    "refund",
-    "refunds",
-    "exchange",
-    "warranty",
-    "product",
-    "products",
-    "availability",
-    "available",
-    "stock",
-    "rewards",
-    "reward",
-    "points",
-    "cashback",
-    "discount",
-    "discounts",
-    "promo",
-    "promocode",
-    "coupon",
-    "sale",
-    "support",
-    "contact",
-    "contacts",
-    "phone",
-    "email",
-    "chat",
-    "customer",
-    "catalog",
-    "catalogue",
-    "kettle",
-    "kettles",
-    "lamp",
-    "lamps",
-    "blender",
-    "toaster",
-    "textile",
-    "textiles",
-    "bedding",
-    "towel",
-    "towels",
-    "cookware",
-    "decor",
-    "hours",
-    "schedule",
-    "working",
-    "open",
-    "address",
-    "gift",
-    "business",
-    "businesses",
-    "company",
-}
 
 ADVERSARIAL_PHRASES = {
     "system prompt",
@@ -145,82 +64,10 @@ ADVERSARIAL_PHRASES = {
     "developer instructions",
 }
 
-OTHER_COMPANY_MARKERS = {
-    "amazon",
-    "walmart",
-    "costco",
-    "wayfair",
-    "ikea",
-    "etsy",
-    "ebay",
-}
-
-# Multi-word unrelated domains. These are checked before positive domain markers
-# so finance uses of "stock" are blocked while ecommerce availability remains in-domain.
-HARD_NEGATIVE_PHRASES = {
-    "stock market",
-    "stock price",
-    "stock prices",
-    "buy stocks",
-    "sell stocks",
-    "learn python",
-    "quantum physics",
-    "recommend a movie",
-    "movie recommendation",
-    "contact the police",
-    "contact police",
-    "emergency services",
-    "government contacts",
-    "contact the government",
-    "cross the border",
-    "next match",
-    "how to cook",
-    "investment advice",
-}
-
-HARD_NEGATIVE_TOKENS = {
-    "tesla",
-    "weather",
-    "cardiology",
-    "border",
-    "stocks",
-    "crypto",
-    "cryptocurrency",
-    "bitcoin",
-    "medicine",
-    "doctor",
-    "diagnosis",
-    "police",
-    "emergency",
-    "government",
-    "football",
-    "soccer",
-    "recipe",
-    "rain",
-    "python",
-    "quantum",
-    "physics",
-    "paris",
-    "movie",
-    "movies",
-    "concert",
-    "invest",
-    "investing",
-    "investment",
-    "investments",
-}
-
-HARD_NEGATIVE_PREFIXES: set[str] = set()
-
 
 def _normalize(text: str) -> str:
     """Normalize text for deterministic matching."""
     return " ".join(text.lower().split())
-
-
-def _tokens(normalized: str) -> list[str]:
-    """Return word-like tokens for exact and prefix matching."""
-    return _WORD_RE.findall(normalized)
 
 
 def _has_phrase(normalized: str, phrases: set[str]) -> bool:
@@ -228,54 +75,101 @@ def _has_phrase(normalized: str, phrases: set[str]) -> bool:
     return any(phrase in normalized for phrase in phrases)
 
 
-def _has_prefix(tokens: list[str], prefixes: set[str]) -> bool:
-    """Return whether any token starts with one of the provided prefixes."""
-    return any(token.startswith(prefix) for token in tokens for prefix in prefixes)
+ANCHORS: dict[QueryRoute, list[str]] = {
+    QueryRoute.FACTUAL_IN_DOMAIN: [
+        "How much is shipping?",
+        "When will my order arrive?",
+        "Which payment methods do you accept?",
+        "Do you accept Apple Pay or Google Pay?",
+        "Can I pay with cash at pickup?",
+        "Do you offer installment payments?",
+        "Where is my receipt?",
+        "How do I return an item?",
+        "What is your refund policy?",
+        "My item arrived damaged, what should I do?",
+        "What is the warranty on this product?",
+        "How do rewards points work?",
+        "Is there a discount for new customers?",
+        "How can I contact support?",
+        "What are your support hours?",
+        "Is this product in stock?",
+        "Can I change or cancel my order?",
+        "Do you ship internationally?",
+        "Can I order a gift?",
+        "How can I reach you?",
+        "What is your phone number?",
+        "How do I track my package?",
+        "Do you work with businesses?",
+    ],
+    QueryRoute.OUT_OF_DOMAIN: [
+        "What is the weather today?",
+        "What is the stock market doing?",
+        "Should I buy stocks?",
+        "Recommend a movie to watch.",
+        "How do I contact the police?",
+        "How do I contact emergency services?",
+        "Where are government contacts?",
+        "Tell me about Amazon.",
+        "Tell me about Walmart.",
+        "How do I cook pasta?",
+        "How do I learn Python?",
+        "What is quantum physics?",
+        "Where is Paris?",
+        "How much is a Tesla?",
+        "Can I get investment advice?",
+        "Where can I buy concert tickets?",
+        "I need medical help.",
+        "When is the next football game?",
+        "Can you recommend a restaurant?",
+        "How do I book a flight?",
+    ],
+    QueryRoute.SMALLTALK: [
+        "Hello",
+        "Hi there",
+        "Good morning",
+        "Thank you",
+        "Who are you?",
+        "What can you do?",
+    ],
+}
+
+_anchor_cache: dict[QueryRoute, np.ndarray] | None = None
 
 
-def _has_domain_marker(normalized: str, tokens: list[str]) -> bool:
-    """Return whether tokenized text contains a known support-domain marker."""
-    if _has_phrase(normalized, DOMAIN_PHRASES):
-        return True
-    return any(token in DOMAIN_TOKENS for token in tokens)
+def _anchor_matrices(embed_fn: EmbedFn) -> dict[QueryRoute, np.ndarray]:
+    """Embed anchors once; cache only for the default (shared) embed function."""
+    global _anchor_cache
+    if embed_fn is embeddings.embed:
+        if _anchor_cache is None:
+            _anchor_cache = {r: np.asarray(embed_fn(t)) for r, t in ANCHORS.items()}
+        return _anchor_cache
+    return {r: np.asarray(embed_fn(t)) for r, t in ANCHORS.items()}
 
 
-def _has_hard_negative(normalized: str, tokens: list[str]) -> bool:
-    """Detect clearly unrelated domains that should not reach retrieval."""
-    return bool(
-        _has_phrase(normalized, HARD_NEGATIVE_PHRASES)
-        or set(tokens) & HARD_NEGATIVE_TOKENS
-        or set(tokens) & OTHER_COMPANY_MARKERS
-        or _has_prefix(tokens, HARD_NEGATIVE_PREFIXES)
-    )
+def classify_query(text: str, embed_fn: EmbedFn | None = None) -> QueryRoute:
+    """Classify a message before retrieval. Fail-closed to OUT_OF_DOMAIN."""
+    if embed_fn is None:
+        embed_fn = embeddings.embed
 
-
-def classify_query(text: str) -> QueryRoute:
-    """Classify a user message before retrieval.
-
-    Priority matters:
-    1. adversarial prompt requests are blocked;
-    2. clear unrelated domains and other companies are blocked;
-    3. explicit ecommerce/support markers reach retrieval;
-    4. pure small-talk is handled without retrieval;
-    5. generic unknown questions and chatter are refused.
-    """
     normalized = _normalize(text)
     if not normalized:
         return QueryRoute.SMALLTALK
 
-    tokens = _tokens(normalized)
-
     if _has_phrase(normalized, ADVERSARIAL_PHRASES):
         return QueryRoute.ADVERSARIAL
 
-    if _has_hard_negative(normalized, tokens):
+    try:
+        mats = _anchor_matrices(embed_fn)
+        # Embed the original-case text so query and (natural-case) anchors match;
+        # `normalized` is lowercased only for the adversarial phrase check above.
+        query_vec = np.asarray(embed_fn([text.strip()]))[0]
+        sims = {route: float(np.max(mat @ query_vec)) for route, mat in mats.items()}
+    except Exception:
+        log.warning("router_embed_failed", exc_info=True)
         return QueryRoute.OUT_OF_DOMAIN
 
-    if _has_domain_marker(normalized, tokens):
-        return QueryRoute.FACTUAL_IN_DOMAIN
-
-    if _has_phrase(normalized, SMALLTALK_PHRASES) or any(token in SMALLTALK_TOKENS for token in tokens):
-        return QueryRoute.SMALLTALK
-
-    return QueryRoute.OUT_OF_DOMAIN
+    return _decide(
+        sims[QueryRoute.SMALLTALK],
+        sims[QueryRoute.FACTUAL_IN_DOMAIN],
+        sims[QueryRoute.OUT_OF_DOMAIN],
+    )
