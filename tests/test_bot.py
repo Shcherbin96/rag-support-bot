@@ -31,16 +31,32 @@ def test_split_for_telegram_splits_long_message():
     assert all(len(part) <= bot_module.TELEGRAM_LIMIT for part in parts)
 
 
-def test_validate_runtime_config_reports_missing_values(monkeypatch):
+def test_validate_runtime_config_reports_missing_selected_provider_key(monkeypatch):
     monkeypatch.setattr(bot_module.config, "TELEGRAM_BOT_TOKEN", "")
+    monkeypatch.setattr(bot_module.config, "LLM_PROVIDER", "nvidia")
+    monkeypatch.setattr(bot_module.config, "SUPPORTED_LLM_PROVIDERS", {"gemini", "nvidia"})
     monkeypatch.setattr(bot_module.config, "LLM_API_KEY", "")
+    monkeypatch.setattr(bot_module.config, "LLM_API_KEY_ENV", "NVIDIA_API_KEY")
 
-    with pytest.raises(SystemExit, match="TELEGRAM_BOT_TOKEN, GEMINI_API_KEY"):
+    with pytest.raises(SystemExit, match="TELEGRAM_BOT_TOKEN, NVIDIA_API_KEY"):
+        bot_module._validate_runtime_config()
+
+
+def test_validate_runtime_config_reports_invalid_provider(monkeypatch):
+    monkeypatch.setattr(bot_module.config, "TELEGRAM_BOT_TOKEN", "token")
+    monkeypatch.setattr(bot_module.config, "LLM_PROVIDER", "unknown")
+    monkeypatch.setattr(bot_module.config, "SUPPORTED_LLM_PROVIDERS", {"gemini", "nvidia"})
+    monkeypatch.setattr(bot_module.config, "LLM_API_KEY", "key")
+
+    with pytest.raises(SystemExit, match="LLM_PROVIDER must be one of"):
         bot_module._validate_runtime_config()
 
 
 def test_validate_runtime_config_accepts_required_values(monkeypatch):
     monkeypatch.setattr(bot_module.config, "TELEGRAM_BOT_TOKEN", "token")
+    monkeypatch.setattr(bot_module.config, "LLM_PROVIDER", "nvidia")
+    monkeypatch.setattr(bot_module.config, "SUPPORTED_LLM_PROVIDERS", {"gemini", "nvidia"})
     monkeypatch.setattr(bot_module.config, "LLM_API_KEY", "key")
+    monkeypatch.setattr(bot_module.config, "LLM_API_KEY_ENV", "NVIDIA_API_KEY")
 
     bot_module._validate_runtime_config()
