@@ -88,3 +88,23 @@ def test_on_question_survives_fallback_send_failure(monkeypatch):
 
     # Must complete without propagating an exception.
     asyncio.run(bot_module.on_question(_Msg()))
+
+
+def test_warm_up_loads_model_and_index(monkeypatch):
+    calls = []
+    monkeypatch.setattr(bot_module.embeddings, "get_model", lambda: calls.append("model"))
+    monkeypatch.setattr(bot_module, "retrieve", lambda query, k: calls.append("retrieve") or [])
+
+    bot_module._warm_up()
+
+    assert calls == ["model", "retrieve"]
+
+
+def test_warm_up_swallows_errors(monkeypatch):
+    def boom(*args, **kwargs):
+        raise RuntimeError("model unavailable")
+
+    monkeypatch.setattr(bot_module.embeddings, "get_model", boom)
+
+    # A missing model/index must not stop the bot from starting.
+    bot_module._warm_up()
