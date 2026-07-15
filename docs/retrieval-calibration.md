@@ -57,6 +57,28 @@ For a stronger evaluation, record:
 - final visible sources;
 - whether the answer was grounded, refused, or failed closed.
 
+## Router calibration
+
+The pre-retrieval router uses a semantic anchor gate (see
+`docs/design/router-redesign.md`): the query is embedded with the local model and
+compared by cosine similarity to curated per-route anchor phrases. Thresholds are
+calibrated against `eval/routing_set.yaml`:
+
+- `ROUTER_IN_DOMAIN_MIN` (default `0.42`) — absolute cosine floor to accept
+  in-domain. Calibrated so labeled in-domain queries clear it; out-of-domain
+  queries that also score high are still rejected by the margin below.
+- `ROUTER_MARGIN` (default `0.05`) — how much closer to an in-domain anchor than
+  to an out-of-domain anchor a query must be.
+- `ROUTER_SMALLTALK_MIN` (default `0.50`) — floor to accept small-talk.
+
+The query is embedded in its original case so it matches the natural-case anchors
+(the lowercased form is used only for the deterministic adversarial phrase check).
+
+To recalibrate after changing anchors or the embedding model, run
+`uv run pytest tests/test_router_routing_set.py -q` and adjust the defaults in
+`rag_bot/router.py`, preferring `out_of_domain` on ties (fail-closed). Add anchors
+for genuinely uncovered intents rather than lowering the floor globally.
+
 ## Production notes
 
 For a real deployment, improve this with:
