@@ -123,8 +123,10 @@ def _success_result(text: str, sources: list[str], chunks: list[dict], route: Qu
 def _format_with_citations(answer_text: str, cited_chunks: list[dict]) -> str:
     if not cited_chunks:
         return answer_text
-    sources = ", ".join(sorted({chunk["source"] for chunk in cited_chunks}))
-    return f"{answer_text}\n\n{CITATION_HEADER}: {sources}"
+    # Show human-readable document titles to the user; the machine-facing
+    # result["sources"] field keeps raw filenames for eval and tests.
+    sources = ", ".join(sorted({chunk.get("title") or chunk["source"] for chunk in cited_chunks}))
+    return f"{answer_text}\n\n📄 {CITATION_HEADER}: {sources}"
 
 
 def _parse_model_response(raw_text: str, valid_chunks: dict[str, dict]) -> tuple[str, list[dict]]:

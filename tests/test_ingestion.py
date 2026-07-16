@@ -10,3 +10,4 @@ def test_load_chunks_produces_more_than_files():
     assert len(chunks) >= n_files            # at least one chunk per file
     assert all(c["text"] for c in chunks)    # no empty chunks
     assert all(c["source"].endswith(".md") for c in chunks)  # source is set
+    assert all(c["title"] and not c["title"].startswith("#") for c in chunks)  # H1 title extracted

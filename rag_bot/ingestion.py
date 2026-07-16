@@ -10,18 +10,28 @@ from rag_bot import config
 COLLECTION = "nestwell"
 
 
+def _document_title(text: str, fallback: str) -> str:
+    """Return the document's H1 heading, or the filename as a fallback."""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("# "):
+            return stripped.removeprefix("# ").strip()
+    return fallback
+
+
 def load_chunks(kb_dir: Path) -> list[dict]:
     """Load Markdown files and split them into section-level chunks."""
     chunks: list[dict] = []
     for path in sorted(kb_dir.glob("*.md")):
         text = path.read_text(encoding="utf-8")
+        title = _document_title(text, path.name)
         parts = text.split("\n## ")
         for index, part in enumerate(parts):
             part = part.strip()
             if not part:
                 continue
             body = part if index == 0 else "## " + part
-            chunks.append({"text": body, "source": path.name})
+            chunks.append({"text": body, "source": path.name, "title": title})
     return chunks
 
 
@@ -48,7 +58,7 @@ def build_index() -> int:
     collection.add(
         ids=[f"chunk-{index}" for index in range(len(chunks))],
         documents=[chunk["text"] for chunk in chunks],
-        metadatas=[{"source": chunk["source"]} for chunk in chunks],
+        metadatas=[{"source": chunk["source"], "title": chunk["title"]} for chunk in chunks],
     )
     return collection.count()
 
