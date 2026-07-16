@@ -8,8 +8,8 @@
 ## Free shipping
 Orders over **$49** ship with **free standard shipping** anywhere in the continental US.
 
-## Tracking
-Once your order ships, a tracking number is sent to your email and by SMS. You can also ask support for the status.
+## Tracking your order
+Wondering where your package is? Once your order ships, we send a tracking number to your email and by SMS. Use it to track your package at any time, or ask support to check the delivery status of your order.
 
 ## Shipping area
 We ship across the continental United States. We do not ship to Alaska, Hawaii, or international addresses.
