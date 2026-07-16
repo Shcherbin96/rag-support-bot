@@ -19,7 +19,7 @@ The assistant should answer only from the knowledge base and include source file
 ```text
 Standard shipping is $5.99 (3–5 business days), express is $14.99 (2 business days), and store pickup is free. Orders over $49 ship free.
 
-Sources: 02_shipping.md
+📄 Sources: Shipping
 ```
 
 ## Scenario 2 — Payment methods
@@ -39,7 +39,7 @@ The assistant should list only payment methods supported by the knowledge base a
 ```text
 We accept Visa, Mastercard, American Express, and Discover, plus PayPal, Apple Pay, and Google Pay. You can also pay with cash or card at pickup, or split an order into 4 interest-free installments.
 
-Sources: 03_payment.md
+📄 Sources: Payment
 ```
 
 ## Scenario 3 — Contact intent
@@ -59,7 +59,7 @@ The assistant should route this as a Nestwell contact question and answer with s
 ```text
 You can reach Nestwell support by phone at 1-800-555-0142, by email at support@nestwell.example, or via live chat on our website.
 
-Sources: 08_contact.md
+📄 Sources: Contact and Hours
 ```
 
 ## Scenario 4 — Out-of-domain refusal

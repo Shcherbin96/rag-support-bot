@@ -100,6 +100,31 @@ def test_answer_uses_only_validated_cited_sources(monkeypatch):
     assert not result["error_type"]
 
 
+def test_citation_footer_prefers_human_readable_title(monkeypatch):
+    chunks = [
+        {
+            "id": "chunk-1",
+            "source": "02_shipping.md",
+            "title": "Shipping",
+            "distance": 0.2,
+            "text": "Standard shipping costs $5.99.",
+        },
+    ]
+    payload = {
+        "answer": "Standard shipping costs $5.99.",
+        "citations": [{"chunk_id": "chunk-1", "quote": "Standard shipping costs $5.99."}],
+    }
+
+    monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
+    monkeypatch.setattr(answer_module, "_client", lambda: _FakeClient(json.dumps(payload)))
+
+    result = answer("How much is shipping?")
+
+    assert "Sources: Shipping" in result["text"]
+    assert "02_shipping.md" not in result["text"]      # no raw filename shown to the user
+    assert result["sources"] == ["02_shipping.md"]     # machine-facing field keeps filenames
+
+
 def test_invalid_model_citation_fails_closed(monkeypatch):
     chunks = [
         {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
