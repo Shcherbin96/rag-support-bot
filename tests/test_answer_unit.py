@@ -434,6 +434,91 @@ def test_answer_accepts_number_written_without_thousands_comma():
     assert citations == [{"chunk_id": "chunk-1", "quote": "over 8,000 products"}]
 
 
+def test_answer_accepts_quote_that_drops_markdown_bold_from_chunk():
+    # The knowledge base stores facts in markdown (e.g. chunk-31, contact info),
+    # but the model naturally quotes the plain-text rendering. Under a plain
+    # whitespace+casefold containment check, "phone: 1-800-..." is not a
+    # substring of "- **phone:** 1-800-..." because of the "**" markers, which
+    # produced a systematic false refusal (model_contract_error) on every
+    # bold/markdown-formatted fact: phone, prices, warranty terms.
+    valid_chunks = {
+        "chunk-31": {
+            "id": "chunk-31",
+            "source": "08_contact.md",
+            "text": (
+                "## Support\n"
+                "- **Phone:** 1-800-555-0142 (toll-free)\n"
+                "- **Email:** support@nestwell.example"
+            ),
+        },
+    }
+    raw_json = json.dumps(
+        {
+            "answer": "You can reach us by phone at 1-800-555-0142 (toll-free).",
+            "citations": [{"chunk_id": "chunk-31", "quote": "Phone: 1-800-555-0142 (toll-free)"}],
+        }
+    )
+
+    answer_text, citations = _parse_model_response(raw_json, valid_chunks)
+
+    assert answer_text == "You can reach us by phone at 1-800-555-0142 (toll-free)."
+    assert citations == [{"chunk_id": "chunk-31", "quote": "Phone: 1-800-555-0142 (toll-free)"}]
+
+
+def test_answer_still_rejects_a_fabricated_quote_not_in_the_chunk():
+    # Anti-hallucination guarantee preserved: a quote whose content (not just
+    # its markdown formatting) differs from the chunk must still be rejected.
+    valid_chunks = {
+        "chunk-31": {
+            "id": "chunk-31",
+            "source": "08_contact.md",
+            "text": (
+                "## Support\n"
+                "- **Phone:** 1-800-555-0142 (toll-free)\n"
+                "- **Email:** support@nestwell.example"
+            ),
+        },
+    }
+    raw_json = json.dumps(
+        {
+            "answer": "You can reach us by phone at 1-800-999-0000.",
+            "citations": [{"chunk_id": "chunk-31", "quote": "Phone: 1-800-999-0000"}],
+        }
+    )
+
+    try:
+        _parse_model_response(raw_json, valid_chunks)
+        raised = False
+    except ValueError as exc:
+        raised = True
+        assert "not present in cited chunk" in str(exc)
+
+    assert raised, "fabricated quote must still raise, markdown-insensitivity must not gut this"
+
+
+def test_answer_accepts_quote_that_adds_markdown_emphasis_not_in_chunk():
+    # Symmetric case: the model's quote adds emphasis markers that are not in
+    # the chunk's plain text. Still the same underlying words, so it matches.
+    valid_chunks = {
+        "chunk-2": {
+            "id": "chunk-2",
+            "source": "02_shipping.md",
+            "text": "Standard shipping — $5.99",
+        },
+    }
+    raw_json = json.dumps(
+        {
+            "answer": "Standard shipping costs $5.99.",
+            "citations": [{"chunk_id": "chunk-2", "quote": "**Standard shipping** — $5.99"}],
+        }
+    )
+
+    answer_text, citations = _parse_model_response(raw_json, valid_chunks)
+
+    assert answer_text == "Standard shipping costs $5.99."
+    assert citations == [{"chunk_id": "chunk-2", "quote": "**Standard shipping** — $5.99"}]
+
+
 def test_no_accepted_context_refuses_with_visible_log(monkeypatch, caplog):
     # All chunks are past the relevance threshold, so accepted_chunks() is empty.
     chunks = [

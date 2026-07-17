@@ -119,6 +119,40 @@ def _normalize_space(text: str) -> str:
     return " ".join(text.split()).casefold()
 
 
+# Markdown emphasis/code markers only: never digits, letters, or punctuation
+# that carries factual meaning ($, %, -, ., @, /, parentheses stay untouched).
+_MARKDOWN_EMPHASIS_RE = re.compile(r"[*_`]")
+
+
+def _normalize_for_quote_match(text: str) -> str:
+    """Normalize text for the citation quote-containment check only.
+
+    The knowledge base stores facts in markdown (e.g. "- **Phone:** 1-800-...
+    (toll-free)"), but a model naturally quotes the plain-text rendering
+    ("Phone: 1-800-... (toll-free)"). Applying only _normalize_space left the
+    "**" markers in the chunk, so a correct, verbatim quote of the fact would
+    not be a substring of the chunk and got rejected as a fabrication -
+    a systematic false refusal on every bold/markdown-formatted fact.
+
+    Design note: stripping "*", "_", and "`" cannot let a fabricated quote
+    through. The model must still reproduce the actual textual content of
+    the chunk (every digit, letter, $, %, -, ., @, /, and parenthesis is
+    still compared); this only makes the match insensitive to markdown
+    formatting the KB happens to use, not to the facts themselves. The
+    leading "- " list bullet needs no special handling: once "**" is gone,
+    substring containment already tolerates it (e.g. "phone: 1-800-..." is
+    a substring of "... - phone: 1-800-... - email ...").
+
+    This normalizer is deliberately kept separate from _normalize_space
+    rather than folded into it: _normalize_space's name and docstring
+    promise whitespace normalization only, and keeping markdown-stripping
+    in its own function means any future caller of _normalize_space won't
+    silently inherit markdown-insensitivity it didn't ask for. Only the
+    quote-containment check below should become markdown-insensitive.
+    """
+    return _MARKDOWN_EMPHASIS_RE.sub("", _normalize_space(text))
+
+
 def _numbers(text: str) -> set[str]:
     """Extract normalized numeric claims from text."""
     normalized = set()
@@ -243,7 +277,9 @@ def _parse_model_response(
         quote = quote.strip()
         if chunk_id not in valid_chunks:
             raise ValueError(f"Model cited chunk outside retrieved context: {chunk_id}")
-        if _normalize_space(quote) not in _normalize_space(valid_chunks[chunk_id]["text"]):
+        if _normalize_for_quote_match(quote) not in _normalize_for_quote_match(
+            valid_chunks[chunk_id]["text"]
+        ):
             raise ValueError(f"Citation quote is not present in cited chunk: {chunk_id}")
         validated.append({"chunk_id": chunk_id, "quote": quote})
 
