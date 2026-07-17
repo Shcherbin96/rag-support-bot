@@ -4,7 +4,7 @@ import json
 from types import SimpleNamespace
 
 import rag_bot.answer as answer_module
-from rag_bot.answer import answer
+from rag_bot.answer import _numbers, answer
 
 
 class _FakeCompletions:
@@ -265,3 +265,54 @@ def test_model_contract_rejection_reason_is_logged(monkeypatch, caplog):
     assert result["error_type"] == "model_contract_error"
     assert "model_contract_rejected" in caplog.text
     assert "999.99" in caplog.text
+
+
+def test_numbers_treats_comma_as_thousands_separator():
+    # US store: comma separates thousands, period is the decimal point.
+    assert _numbers("8,000") == _numbers("8000") == {"8000"}
+    assert _numbers("$5.99") == {"5.99"}
+    assert _numbers("1,299.50") == {"1299.50"}
+
+
+def test_answer_accepts_number_written_without_thousands_comma(monkeypatch):
+    chunks = [
+        {
+            "id": "chunk-1",
+            "source": "catalog.md",
+            "distance": 0.2,
+            "text": "We stock over 8,000 products across all categories.",
+        },
+    ]
+    payload = {
+        "answer": "We stock over 8000 products.",
+        "citations": [{"chunk_id": "chunk-1", "quote": "over 8,000 products"}],
+    }
+
+    monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
+    monkeypatch.setattr(answer_module, "_client", lambda: _FakeClient(json.dumps(payload)))
+
+    result = answer("How many products do you stock?")
+
+    assert result["error_type"] == ""
+    assert "We stock over 8000 products." in result["text"]
+
+
+def test_no_accepted_context_refuses_with_visible_log(monkeypatch, caplog):
+    # All chunks are past the relevance threshold, so accepted_chunks() is empty.
+    chunks = [
+        {"id": "chunk-1", "source": "shipping.md", "distance": 5.0, "text": "Standard shipping costs $5.99."},
+    ]
+
+    def fail_client():
+        raise AssertionError("LLM should not be called when no context is accepted")
+
+    monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
+    monkeypatch.setattr(answer_module, "_client", fail_client)
+
+    with caplog.at_level("INFO", logger="nestwell-answer"):
+        result = answer("How much is shipping?")
+
+    # Controlled refusal, not a failure: error_type stays empty by contract.
+    assert result["error_type"] == ""
+    assert result["refusal_reason"] == "no_accepted_context"
+    assert "refusal reason=no_accepted_context" in caplog.text
