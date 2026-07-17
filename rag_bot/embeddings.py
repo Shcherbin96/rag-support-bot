@@ -4,6 +4,7 @@ Centralizing the model here means the router does not load a second copy at
 import time, and tests that avoid the semantic path stay fast (the model is
 only loaded on the first embed() call).
 """
+
 from functools import lru_cache
 
 import numpy as np

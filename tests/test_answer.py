@@ -27,5 +27,10 @@ def test_unknown_fact_is_refused():
     lowered = result["text"].lower()
     assert any(
         marker in lowered
-        for marker in ["could not find", "cannot invent", "do not have reliable", "only answer from"]
+        for marker in [
+            "could not find",
+            "cannot invent",
+            "do not have reliable",
+            "only answer from",
+        ]
     )

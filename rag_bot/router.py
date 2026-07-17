@@ -7,10 +7,10 @@ filtering and citation validation make the final decision. Uncertain messages ro
 to out-of-domain (fail-closed).
 """
 
-from collections.abc import Callable
-from enum import StrEnum
 import logging
 import os
+from collections.abc import Callable
+from enum import StrEnum
 
 import numpy as np
 

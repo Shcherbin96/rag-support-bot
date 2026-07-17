@@ -20,7 +20,8 @@ dp = Dispatcher()
 ANSWER_SEMAPHORE = asyncio.Semaphore(3)
 TELEGRAM_LIMIT = 4096
 FALLBACK_MESSAGE = (
-    "I could not process the request safely. Please try again later or contact a human support agent."
+    "I could not process the request safely. Please try again later or contact a human "
+    "support agent."
 )
 
 GREETING = (

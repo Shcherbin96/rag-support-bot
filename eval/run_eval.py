@@ -47,7 +47,8 @@ def _ensure_eval_can_run() -> None:
     if os.getenv("EVAL_OFFLINE") == "1":
         return
     raise SystemExit(
-        f"{config.LLM_API_KEY_ENV} is required for live eval with LLM_PROVIDER={config.LLM_PROVIDER}. "
+        f"{config.LLM_API_KEY_ENV} is required for live eval with "
+        f"LLM_PROVIDER={config.LLM_PROVIDER}. "
         "Set EVAL_OFFLINE=1 only when intentionally testing offline/refusal behavior."
     )
 
@@ -68,7 +69,12 @@ def _answer_with_retry(question: str, model: str, retries: int = 3) -> dict:
     # "runtime_error" here is an eval-harness-scoped sentinel (retries exhausted
     # with no result at all), not one of the answer()-contract AnswerError values,
     # so it deliberately stays outside that enum.
-    return result or {"text": "<ERROR: no result>", "sources": [], "route": "error", "error_type": "runtime_error"}
+    return result or {
+        "text": "<ERROR: no result>",
+        "sources": [],
+        "route": "error",
+        "error_type": "runtime_error",
+    }
 
 
 def is_refusal(text: str) -> bool:
@@ -116,11 +122,20 @@ def eval_model(model: str, cases: list[dict]) -> dict:
             # "runtime_exception" is an eval-harness-scoped sentinel (the harness
             # itself blew up calling answer()), not an AnswerError contract value.
             error = f"runtime_exception: {exc}"
-            result = {"text": f"<ERROR: {exc}>", "sources": [], "route": "error", "error_type": "runtime_exception"}
+            result = {
+                "text": f"<ERROR: {exc}>",
+                "sources": [],
+                "route": "error",
+                "error_type": "runtime_exception",
+            }
 
         if ok:
             by_type[case_type][0] += 1
-        elif case_type == "refuse" and not result.get("error_type") and not is_refusal(result["text"]):
+        elif (
+            case_type == "refuse"
+            and not result.get("error_type")
+            and not is_refusal(result["text"])
+        ):
             hallucinations += 1
 
         case_results.append(
@@ -165,10 +180,14 @@ def _summary_sentence(results: list[dict]) -> str:
             "Do not use it as a quality claim until failures are investigated."
         )
     if total_hallucinations == 0 and total_errors == 0:
-        return f"All {total_cases} cases passed with no observed hallucinations or runtime/model errors."
+        return (
+            f"All {total_cases} cases passed with no observed hallucinations or "
+            "runtime/model errors."
+        )
     return (
         f"All cases passed, but the run observed {total_hallucinations} hallucination(s) "
-        f"and {total_errors} runtime/model error(s); investigate before using the result as a quality claim."
+        f"and {total_errors} runtime/model error(s); investigate before using the result "
+        "as a quality claim."
     )
 
 
@@ -209,7 +228,10 @@ def main() -> None:
             f"~{result['avg_latency']}s · errors {result['errors']}\n"
         )
 
-    header = "| Model | Passed | Grounded | Refusal | Small-talk | Hallucinations | Errors | Avg latency |\n"
+    header = (
+        "| Model | Passed | Grounded | Refusal | Small-talk | Hallucinations | Errors "
+        "| Avg latency |\n"
+    )
     header += "|---|---:|---:|---:|---:|---:|---:|---:|\n"
     lines = []
     for result in rows:
@@ -234,10 +256,13 @@ def main() -> None:
         + table
         + "\n\n"
         + f"**Conclusion:** {_summary_sentence(rows)}\n\n"
-        + f"Per-case details: [`case_results.md`](case_results.md)\n",
+        + "Per-case details: [`case_results.md`](case_results.md)\n",
         encoding="utf-8",
     )
-    PER_CASE_RESULTS.write_text("# Per-case Evaluation Results\n\n" + _case_results_table(rows) + "\n", encoding="utf-8")
+    PER_CASE_RESULTS.write_text(
+        "# Per-case Evaluation Results\n\n" + _case_results_table(rows) + "\n",
+        encoding="utf-8",
+    )
     print(f"\nSaved to {RESULTS} and {PER_CASE_RESULTS}")
 
 

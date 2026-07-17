@@ -1,5 +1,6 @@
 """Build the local Chroma index from Markdown knowledge-base documents."""
 
+import contextlib
 from pathlib import Path
 
 import chromadb
@@ -49,10 +50,8 @@ def build_index() -> int:
     # Demo-friendly rebuild: recreate the collection to avoid duplicate chunks.
     # Missing-collection errors are expected on a clean CI runner. Other Chroma
     # failures are surfaced later when create/add/count fails.
-    try:
+    with contextlib.suppress(Exception):
         client.delete_collection(COLLECTION)
-    except Exception:
-        pass
 
     collection = client.create_collection(COLLECTION, embedding_function=embed_fn)
     collection.add(

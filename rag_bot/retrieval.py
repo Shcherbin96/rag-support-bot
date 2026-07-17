@@ -42,7 +42,7 @@ def retrieve(query: str, k: int = config.TOP_K) -> list[dict]:
             "title": meta.get("title", meta["source"]),
             "distance": distance,
         }
-        for chunk_id, doc, meta, distance in zip(ids, docs, metas, distances)
+        for chunk_id, doc, meta, distance in zip(ids, docs, metas, distances, strict=True)
     ]
 
 

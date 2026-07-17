@@ -1,4 +1,5 @@
 """Model-backed tests for the shared embedding loader."""
+
 import numpy as np
 
 from rag_bot.embeddings import embed, get_model
