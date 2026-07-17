@@ -7,7 +7,7 @@ import httpx
 import openai
 
 import rag_bot.answer as answer_module
-from rag_bot.answer import AnswerError, _numbers, answer
+from rag_bot.answer import AnswerError, _numbers, _parse_model_response, answer
 
 
 class _FakeCompletions:
@@ -405,27 +405,33 @@ def test_numbers_treats_comma_as_thousands_separator():
     assert _numbers("1,299.50") == {"1299.50"}
 
 
-def test_answer_accepts_number_written_without_thousands_comma(monkeypatch):
-    chunks = [
-        {
+def test_answer_accepts_number_written_without_thousands_comma():
+    # The comma-as-thousands-separator behavior lives in _parse_model_response's
+    # numeric-claim check, so test it there directly. Driving the whole routed
+    # answer() would drag in the semantic router, whose embedding similarities
+    # vary slightly across torch/BLAS backends and can flip a borderline query's
+    # route (e.g. "How many products do you stock?" routing out_of_domain on some
+    # platforms) - making a deterministic unit assertion non-deterministic by OS.
+    valid_chunks = {
+        "chunk-1": {
             "id": "chunk-1",
             "source": "catalog.md",
-            "distance": 0.2,
             "text": "We stock over 8,000 products across all categories.",
         },
-    ]
-    payload = {
-        "answer": "We stock over 8000 products.",
-        "citations": [{"chunk_id": "chunk-1", "quote": "over 8,000 products"}],
     }
+    raw_json = json.dumps(
+        {
+            "answer": "We stock over 8000 products.",
+            "citations": [{"chunk_id": "chunk-1", "quote": "over 8,000 products"}],
+        }
+    )
 
-    monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
-    monkeypatch.setattr(answer_module, "_client", lambda: _FakeClient(json.dumps(payload)))
+    # "8000" in the answer must be treated as covered by "8,000" in the evidence
+    # quote, so parsing succeeds instead of raising on an unsupported number.
+    answer_text, citations = _parse_model_response(raw_json, valid_chunks)
 
-    result = answer("How many products do you stock?")
-
-    assert result["error_type"] == ""
-    assert "We stock over 8000 products." in result["text"]
+    assert answer_text == "We stock over 8000 products."
+    assert citations == [{"chunk_id": "chunk-1", "quote": "over 8,000 products"}]
 
 
 def test_no_accepted_context_refuses_with_visible_log(monkeypatch, caplog):
