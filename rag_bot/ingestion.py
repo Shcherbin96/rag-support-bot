@@ -20,9 +20,9 @@ def _document_title(text: str, fallback: str) -> str:
     return fallback
 
 
-def load_chunks(kb_dir: Path) -> list[dict]:
+def load_chunks(kb_dir: Path) -> list[dict[str, str]]:
     """Load Markdown files and split them into section-level chunks."""
-    chunks: list[dict] = []
+    chunks: list[dict[str, str]] = []
     for path in sorted(kb_dir.glob("*.md")):
         text = path.read_text(encoding="utf-8")
         title = _document_title(text, path.name)
@@ -53,7 +53,9 @@ def build_index() -> int:
     with contextlib.suppress(Exception):
         client.delete_collection(COLLECTION)
 
-    collection = client.create_collection(COLLECTION, embedding_function=embed_fn)
+    # Same chromadb SentenceTransformerEmbeddingFunction stub inconsistency as
+    # retrieval.py's _collection(); see the comment there.
+    collection = client.create_collection(COLLECTION, embedding_function=embed_fn)  # type: ignore[arg-type]
     collection.add(
         ids=[f"chunk-{index}" for index in range(len(chunks))],
         documents=[chunk["text"] for chunk in chunks],

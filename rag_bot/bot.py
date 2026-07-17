@@ -74,6 +74,9 @@ async def on_question(message: Message) -> None:
     fingerprint = _message_fingerprint(question)
 
     try:
+        # aiogram always sets .bot to the Bot instance that received the update when
+        # dispatching a handler; it's only Optional[Bot] in the type for construction.
+        assert message.bot is not None
         await message.bot.send_chat_action(message.chat.id, ChatAction.TYPING)
         async with ANSWER_SEMAPHORE:
             result = await asyncio.wait_for(
