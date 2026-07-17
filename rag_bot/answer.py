@@ -5,6 +5,7 @@ import logging
 import re
 from enum import StrEnum
 from json import JSONDecodeError
+from typing import NotRequired, TypedDict
 
 from openai import OpenAI
 
@@ -26,6 +27,24 @@ class AnswerError(StrEnum):
     RETRIEVAL_ERROR = "retrieval_error"
     PROVIDER_ERROR = "provider_error"
     MODEL_CONTRACT_ERROR = "model_contract_error"
+
+
+class AnswerResult(TypedDict):
+    """The result payload returned by answer(). Still a plain dict at runtime.
+
+    bot.py and eval/run_eval.py index this by key (result["text"], .get("sources"),
+    etc.), so this stays a TypedDict rather than a dataclass to keep that call
+    pattern unchanged.
+    """
+
+    text: str
+    sources: list[str]
+    chunks: list[dict]
+    route: str
+    error_type: str
+    retryable: bool
+    refusal_reason: NotRequired[str]  # only set on the context-empty refusal path
+
 
 SYSTEM_PROMPT = (
     "You are a customer-support assistant for the Nestwell online store. "
@@ -110,7 +129,7 @@ def _error_result(
     chunks: list[dict] | None = None,
     *,
     retryable: bool = False,
-) -> dict:
+) -> AnswerResult:
     """Return a controlled refusal with a machine-readable error type."""
     return {
         "text": REFUSAL_TEXT,
@@ -122,7 +141,7 @@ def _error_result(
     }
 
 
-def _success_result(text: str, sources: list[str], chunks: list[dict], route: QueryRoute | str) -> dict:
+def _success_result(text: str, sources: list[str], chunks: list[dict], route: QueryRoute | str) -> AnswerResult:
     """Return a normalized successful result payload."""
     return {
         "text": text,
@@ -200,7 +219,7 @@ def _parse_model_response(raw_text: str, valid_chunks: dict[str, dict]) -> tuple
     return answer_text, validated
 
 
-def answer(query: str, k: int = config.TOP_K, model: str = config.ANSWER_MODEL) -> dict:
+def answer(query: str, k: int = config.TOP_K, model: str = config.ANSWER_MODEL) -> AnswerResult:
     """Return a grounded answer plus validated sources and retrieved chunks."""
     route = classify_query(query)
 
