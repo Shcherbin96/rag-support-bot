@@ -1,0 +1,55 @@
+name: Evals
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"   # Mondays 06:00 UTC
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  live-evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --dev --frozen
+
+      - name: Build knowledge-base index
+        run: uv run python -m rag_bot.ingestion
+
+      - name: Run live eval
+        env:
+          LLM_PROVIDER: gemini
+          GEMINI_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          LLM_BASE_URL: https://openrouter.ai/api/v1
+          ANSWER_MODEL: google/gemini-2.5-flash-lite
+          EVAL_MODELS: google/gemini-2.5-flash-lite
+          EVAL_FAIL_UNDER: "0.75"
+        run: PYTHONPATH=. uv run python eval/run_eval.py
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: eval-report
+          path: |
+            eval/results.md
+            eval/case_results.md
+
+      - name: Open issue on degradation
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --title "Eval degradation ($(date -u +%F))" --body "The scheduled eval failed its quality gate (pass-rate < 0.75 or a hallucination was detected). Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} — report attached as an artifact."
