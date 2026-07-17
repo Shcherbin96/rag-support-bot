@@ -98,7 +98,15 @@ _RETRYABLE_PROVIDER_MARKERS = (
 )
 # Markers that indicate a 400 was caused by the response_format parameter itself
 # rather than some other request problem, i.e. a provider capability gap.
-_JSON_MODE_UNSUPPORTED_MARKERS = ("response_format", "json", "unsupported")
+# Deliberately narrow: a bare "json" also matches unrelated 400s (e.g. "Malformed
+# JSON in request body"), which would misclassify a real request error as a
+# capability gap and trigger a wasted retry with a misleading log message.
+_JSON_MODE_UNSUPPORTED_MARKERS = (
+    "response_format",
+    "not supported",
+    "unsupported parameter",
+    "unsupported value",
+)
 
 
 def _client() -> OpenAI:

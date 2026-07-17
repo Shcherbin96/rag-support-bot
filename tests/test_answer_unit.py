@@ -749,3 +749,40 @@ def test_json_mode_unrelated_bad_request_does_not_retry(monkeypatch):
     assert result["error_type"] == AnswerError.PROVIDER_ERROR
     assert result["retryable"] is False
     assert len(completions.calls) == 1
+
+
+def test_json_mode_malformed_json_body_does_not_retry(monkeypatch):
+    # A malformed request body is a real, unrelated 400 that happens to
+    # contain the word "json" - it must not be misclassified as a
+    # response_format capability gap and trigger a wasted retry.
+    chunks = [
+        {
+            "id": "chunk-1",
+            "source": "shipping.md",
+            "distance": 0.2,
+            "text": "Standard shipping costs $5.99.",
+        },
+    ]
+    exc = _bad_request_error("Malformed JSON in request body.")
+
+    class _AlwaysFailingCompletions:
+        def __init__(self, exc: Exception):
+            self.exc = exc
+            self.calls: list[dict] = []
+
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            raise self.exc
+
+    completions = _AlwaysFailingCompletions(exc)
+    fake_client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+    monkeypatch.setattr(answer_module.config, "LLM_JSON_MODE", True)
+    monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
+    monkeypatch.setattr(answer_module, "_client", lambda: fake_client)
+
+    result = answer("How much is shipping?")
+
+    assert result["error_type"] == AnswerError.PROVIDER_ERROR
+    assert result["retryable"] is False
+    assert len(completions.calls) == 1
