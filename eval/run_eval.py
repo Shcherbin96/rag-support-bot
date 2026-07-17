@@ -14,7 +14,7 @@ from pathlib import Path
 import yaml
 
 from rag_bot import config
-from rag_bot.answer import answer
+from rag_bot.answer import AnswerError, answer
 
 REFUSAL_MARKERS = [
     "could not find",
@@ -58,13 +58,16 @@ def _answer_with_retry(question: str, model: str, retries: int = 3) -> dict:
     for attempt in range(retries):
         result = answer(question, model=model)
         if (
-            result.get("error_type") == "provider_error"
+            result.get("error_type") == AnswerError.PROVIDER_ERROR
             and result.get("retryable")
             and attempt < retries - 1
         ):
             time.sleep(20 * (attempt + 1))
             continue
         return result
+    # "runtime_error" here is an eval-harness-scoped sentinel (retries exhausted
+    # with no result at all), not one of the answer()-contract AnswerError values,
+    # so it deliberately stays outside that enum.
     return result or {"text": "<ERROR: no result>", "sources": [], "route": "error", "error_type": "runtime_error"}
 
 
@@ -110,6 +113,8 @@ def eval_model(model: str, cases: list[dict]) -> dict:
         except Exception as exc:
             errors += 1
             ok = False
+            # "runtime_exception" is an eval-harness-scoped sentinel (the harness
+            # itself blew up calling answer()), not an AnswerError contract value.
             error = f"runtime_exception: {exc}"
             result = {"text": f"<ERROR: {exc}>", "sources": [], "route": "error", "error_type": "runtime_exception"}
 

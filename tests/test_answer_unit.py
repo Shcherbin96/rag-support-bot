@@ -4,7 +4,7 @@ import json
 from types import SimpleNamespace
 
 import rag_bot.answer as answer_module
-from rag_bot.answer import _numbers, answer
+from rag_bot.answer import AnswerError, _numbers, answer
 
 
 class _FakeCompletions:
@@ -141,6 +141,7 @@ def test_invalid_model_citation_fails_closed(monkeypatch):
 
     assert result["sources"] == []
     assert result["error_type"] == "model_contract_error"
+    assert result["error_type"] == AnswerError.MODEL_CONTRACT_ERROR
     assert "cannot invent" in result["text"]
 
 
@@ -189,6 +190,29 @@ def test_retrieval_exception_fails_closed(monkeypatch):
 
     assert result["sources"] == []
     assert result["error_type"] == "retrieval_error"
+    assert result["error_type"] == AnswerError.RETRIEVAL_ERROR
+
+
+def test_answer_error_enum_values_match_documented_set():
+    assert {member.value for member in AnswerError} == {
+        "missing_index",
+        "retrieval_error",
+        "provider_error",
+        "model_contract_error",
+    }
+
+
+def test_missing_index_error_path_returns_enum_value(monkeypatch):
+    from rag_bot.retrieval import KnowledgeBaseNotReadyError
+
+    def raise_not_ready(*args, **kwargs):
+        raise KnowledgeBaseNotReadyError("index missing")
+
+    monkeypatch.setattr(answer_module, "retrieve", raise_not_ready)
+    result = answer("How much is shipping?")
+
+    assert result["error_type"] == AnswerError.MISSING_INDEX
+    assert result["error_type"] == "missing_index"
 
 
 def test_transient_provider_error_is_marked_retryable(monkeypatch):

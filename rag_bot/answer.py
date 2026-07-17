@@ -3,6 +3,7 @@
 import json
 import logging
 import re
+from enum import StrEnum
 from json import JSONDecodeError
 
 from openai import OpenAI
@@ -12,6 +13,19 @@ from rag_bot.retrieval import KnowledgeBaseNotReadyError, accepted_chunks, retri
 from rag_bot.router import QueryRoute, classify_query
 
 log = logging.getLogger("nestwell-answer")
+
+
+class AnswerError(StrEnum):
+    """Machine-readable error taxonomy for answer() failure paths.
+
+    Values are frozen: bot.py, eval/run_eval.py, and downstream consumers
+    compare against these exact strings, so they must not change.
+    """
+
+    MISSING_INDEX = "missing_index"
+    RETRIEVAL_ERROR = "retrieval_error"
+    PROVIDER_ERROR = "provider_error"
+    MODEL_CONTRACT_ERROR = "model_contract_error"
 
 SYSTEM_PROMPT = (
     "You are a customer-support assistant for the Nestwell online store. "
@@ -92,7 +106,7 @@ def _is_retryable_provider_error(exc: Exception) -> bool:
 
 def _error_result(
     route: QueryRoute | str,
-    error_type: str,
+    error_type: AnswerError,
     chunks: list[dict] | None = None,
     *,
     retryable: bool = False,
@@ -103,7 +117,7 @@ def _error_result(
         "sources": [],
         "chunks": chunks or [],
         "route": route.value if isinstance(route, QueryRoute) else str(route),
-        "error_type": error_type,
+        "error_type": error_type.value,
         "retryable": retryable,
     }
 
@@ -199,10 +213,10 @@ def answer(query: str, k: int = config.TOP_K, model: str = config.ANSWER_MODEL) 
     try:
         chunks = retrieve(query, k=k)
     except KnowledgeBaseNotReadyError:
-        return _error_result(route, "missing_index")
+        return _error_result(route, AnswerError.MISSING_INDEX)
     except Exception:
         log.warning("retrieval_error", exc_info=True)
-        return _error_result(route, "retrieval_error")
+        return _error_result(route, AnswerError.RETRIEVAL_ERROR)
 
     context_chunks = accepted_chunks(chunks)
     if not context_chunks:
@@ -235,7 +249,7 @@ def answer(query: str, k: int = config.TOP_K, model: str = config.ANSWER_MODEL) 
     except Exception as exc:
         return _error_result(
             route,
-            "provider_error",
+            AnswerError.PROVIDER_ERROR,
             chunks,
             retryable=_is_retryable_provider_error(exc),
         )
@@ -249,7 +263,7 @@ def answer(query: str, k: int = config.TOP_K, model: str = config.ANSWER_MODEL) 
         # intentionally strict, so this also reveals false refusals (e.g. a
         # correct answer phrasing a number the cited quote does not contain).
         log.info("model_contract_rejected reason=%s", exc)
-        return _error_result(route, "model_contract_error", chunks)
+        return _error_result(route, AnswerError.MODEL_CONTRACT_ERROR, chunks)
 
     cited_ids = {citation["chunk_id"] for citation in citations}
     cited_chunks = [chunk for chunk in context_chunks if chunk["id"] in cited_ids]
