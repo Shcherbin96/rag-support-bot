@@ -519,6 +519,88 @@ def test_answer_accepts_quote_that_adds_markdown_emphasis_not_in_chunk():
     assert citations == [{"chunk_id": "chunk-2", "quote": "**Standard shipping** — $5.99"}]
 
 
+def test_answer_rejects_quote_that_would_fabricate_a_number_via_merged_markdown():
+    # Anti-hallucination false-accept: the chunk says "1**2**" (i.e. "1-2" with
+    # markdown emphasis wrapping the "2"). If emphasis markers are stripped to
+    # EMPTY STRING, "1**2**" normalizes to "12", so a citation quoting "12"
+    # would wrongly be accepted as present in the chunk - fabricating a number
+    # ("12") the source never stated (it says 1-2, i.e. one to two). Stripping
+    # to a SPACE instead keeps "1 2" in the chunk, so "12" is not a substring
+    # and the citation (and thus the whole answer) must be rejected.
+    valid_chunks = {
+        "chunk-9": {
+            "id": "chunk-9",
+            "source": "07_shipping_speed.md",
+            "text": "The item ships in 1**2** business days.",
+        },
+    }
+    raw_json = json.dumps(
+        {
+            "answer": "It ships in 12 business days.",
+            "citations": [{"chunk_id": "chunk-9", "quote": "ships in 12 business days"}],
+        }
+    )
+
+    try:
+        _parse_model_response(raw_json, valid_chunks)
+        raised = False
+    except ValueError:
+        raised = True
+
+    assert raised, "fabricated number '12' must be rejected, not accepted via markdown-merge"
+
+
+def test_answer_rejects_underscore_merged_digits():
+    # Same false-accept shape with "_" instead of "*": "A_100" must not
+    # normalize to a chunk containing "A100" as a substring.
+    valid_chunks = {
+        "chunk-10": {
+            "id": "chunk-10",
+            "source": "10_model_numbers.md",
+            "text": "Model A_100 is the base tier.",
+        },
+    }
+    raw_json = json.dumps(
+        {
+            "answer": "The base tier model is A100.",
+            "citations": [{"chunk_id": "chunk-10", "quote": "Model A100 is the base tier"}],
+        }
+    )
+
+    try:
+        _parse_model_response(raw_json, valid_chunks)
+        raised = False
+    except ValueError:
+        raised = True
+
+    assert raised, "'A100' must not match a chunk that only contains 'A_100'"
+
+
+def test_answer_rejects_backtick_merged_digits():
+    # Same false-accept shape with a backtick code marker.
+    valid_chunks = {
+        "chunk-11": {
+            "id": "chunk-11",
+            "source": "11_codes.md",
+            "text": "Reference code `5`10 is required at checkout.",
+        },
+    }
+    raw_json = json.dumps(
+        {
+            "answer": "The reference code is 510.",
+            "citations": [{"chunk_id": "chunk-11", "quote": "Reference code 510 is required"}],
+        }
+    )
+
+    try:
+        _parse_model_response(raw_json, valid_chunks)
+        raised = False
+    except ValueError:
+        raised = True
+
+    assert raised, "'510' must not match a chunk that only contains '`5`10'"
+
+
 def test_no_accepted_context_refuses_with_visible_log(monkeypatch, caplog):
     # All chunks are past the relevance threshold, so accepted_chunks() is empty.
     chunks = [

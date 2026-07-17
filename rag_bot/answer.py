@@ -134,12 +134,24 @@ def _normalize_for_quote_match(text: str) -> str:
     not be a substring of the chunk and got rejected as a fabrication -
     a systematic false refusal on every bold/markdown-formatted fact.
 
-    Design note: stripping "*", "_", and "`" cannot let a fabricated quote
-    through. The model must still reproduce the actual textual content of
-    the chunk (every digit, letter, $, %, -, ., @, /, and parenthesis is
-    still compared); this only makes the match insensitive to markdown
-    formatting the KB happens to use, not to the facts themselves. The
-    leading "- " list bullet needs no special handling: once "**" is gone,
+    Design note: emphasis markers are replaced with a SPACE, not stripped to
+    nothing. Replacing with the empty string can fabricate a number: a chunk
+    written as "ships in 1**2** business days" (i.e. "1-2 business days" with
+    the "2" wrapped in emphasis) would normalize to "...12 business days...",
+    so a citation quoting "12 business days" - a fact never stated by the
+    source, which says one-to-two - would wrongly be accepted. Replacing with
+    a space instead yields "...1 2 business days...", which "12 business
+    days" is not a substring of, so the fabrication is still rejected.
+    _normalize_space (called after the substitution) collapses the inserted
+    space together with any surrounding whitespace, so the legitimate
+    markdown case is unaffected: "**Phone:**" becomes "  phone:  " then
+    collapses to "phone:", still matching a plain-text quote.
+
+    The model must still reproduce the actual textual content of the chunk
+    (every digit, letter, $, %, -, ., @, /, and parenthesis is still
+    compared); this only makes the match insensitive to markdown formatting
+    the KB happens to use, not to the facts themselves. The leading "- " list
+    bullet needs no special handling: once "**" is turned to space,
     substring containment already tolerates it (e.g. "phone: 1-800-..." is
     a substring of "... - phone: 1-800-... - email ...").
 
@@ -150,7 +162,7 @@ def _normalize_for_quote_match(text: str) -> str:
     silently inherit markdown-insensitivity it didn't ask for. Only the
     quote-containment check below should become markdown-insensitive.
     """
-    return _MARKDOWN_EMPHASIS_RE.sub("", _normalize_space(text))
+    return _normalize_space(_MARKDOWN_EMPHASIS_RE.sub(" ", text))
 
 
 def _numbers(text: str) -> set[str]:
