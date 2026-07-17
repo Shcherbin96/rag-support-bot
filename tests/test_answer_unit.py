@@ -3,6 +3,9 @@
 import json
 from types import SimpleNamespace
 
+import httpx
+import openai
+
 import rag_bot.answer as answer_module
 from rag_bot.answer import AnswerError, _numbers, answer
 
@@ -33,6 +36,54 @@ class _FakeClient:
 class _FailingClient:
     def __init__(self, exc: Exception):
         self.chat = SimpleNamespace(completions=_FailingCompletions(exc))
+
+
+class _RecordingCompletions:
+    """Fake completions endpoint that records every create() call's kwargs."""
+
+    def __init__(self, content: str):
+        self.content = content
+        self.calls: list[dict] = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=self.content))]
+        )
+
+
+class _RecordingClient:
+    def __init__(self, content: str):
+        self.chat = SimpleNamespace(completions=_RecordingCompletions(content))
+
+
+class _FallbackCompletions:
+    """Fake completions endpoint that rejects the first call, then succeeds."""
+
+    def __init__(self, exc: Exception, content: str):
+        self.exc = exc
+        self.content = content
+        self.calls: list[dict] = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        if len(self.calls) == 1:
+            raise self.exc
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=self.content))]
+        )
+
+
+class _FallbackClient:
+    def __init__(self, exc: Exception, content: str):
+        self.chat = SimpleNamespace(completions=_FallbackCompletions(exc, content))
+
+
+def _bad_request_error(message: str) -> openai.BadRequestError:
+    """Build a real openai.BadRequestError with the SDK's expected shape."""
+    request = httpx.Request("POST", "https://example.test/v1/chat/completions")
+    response = httpx.Response(400, request=request, json={"error": {"message": message}})
+    return openai.BadRequestError(message, response=response, body={"error": {"message": message}})
 
 
 def test_out_of_domain_query_is_refused_before_retrieval(monkeypatch):
@@ -340,3 +391,105 @@ def test_no_accepted_context_refuses_with_visible_log(monkeypatch, caplog):
     assert result["error_type"] == ""
     assert result["refusal_reason"] == "no_accepted_context"
     assert "refusal reason=no_accepted_context" in caplog.text
+
+
+def test_json_mode_on_passes_response_format(monkeypatch):
+    chunks = [
+        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
+    ]
+    payload = {
+        "answer": "Standard shipping costs $5.99.",
+        "citations": [{"chunk_id": "chunk-1", "quote": "Standard shipping costs $5.99."}],
+    }
+    fake_client = _RecordingClient(json.dumps(payload))
+
+    monkeypatch.setattr(answer_module.config, "LLM_JSON_MODE", True)
+    monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
+    monkeypatch.setattr(answer_module, "_client", lambda: fake_client)
+
+    result = answer("How much is shipping?")
+
+    assert result["error_type"] == ""
+    calls = fake_client.chat.completions.calls
+    assert len(calls) == 1
+    assert calls[0]["response_format"] == {"type": "json_object"}
+
+
+def test_json_mode_off_omits_response_format(monkeypatch):
+    chunks = [
+        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
+    ]
+    payload = {
+        "answer": "Standard shipping costs $5.99.",
+        "citations": [{"chunk_id": "chunk-1", "quote": "Standard shipping costs $5.99."}],
+    }
+    fake_client = _RecordingClient(json.dumps(payload))
+
+    monkeypatch.setattr(answer_module.config, "LLM_JSON_MODE", False)
+    monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
+    monkeypatch.setattr(answer_module, "_client", lambda: fake_client)
+
+    result = answer("How much is shipping?")
+
+    assert result["error_type"] == ""
+    calls = fake_client.chat.completions.calls
+    assert len(calls) == 1
+    assert "response_format" not in calls[0]
+
+
+def test_json_mode_bad_request_falls_back_without_response_format(monkeypatch, caplog):
+    chunks = [
+        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
+    ]
+    payload = {
+        "answer": "Standard shipping costs $5.99.",
+        "citations": [{"chunk_id": "chunk-1", "quote": "Standard shipping costs $5.99."}],
+    }
+    exc = _bad_request_error("Invalid parameter: 'response_format' is not supported for this model.")
+    fake_client = _FallbackClient(exc, json.dumps(payload))
+
+    monkeypatch.setattr(answer_module.config, "LLM_JSON_MODE", True)
+    monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
+    monkeypatch.setattr(answer_module, "_client", lambda: fake_client)
+
+    with caplog.at_level("INFO", logger="nestwell-answer"):
+        result = answer("How much is shipping?")
+
+    assert result["error_type"] == ""
+    assert result["sources"] == ["shipping.md"]
+    calls = fake_client.chat.completions.calls
+    assert len(calls) == 2
+    assert calls[0]["response_format"] == {"type": "json_object"}
+    assert "response_format" not in calls[1]
+    assert "json_mode_unsupported" in caplog.text
+
+
+def test_json_mode_unrelated_bad_request_does_not_retry(monkeypatch):
+    chunks = [
+        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
+    ]
+    exc = _bad_request_error("Invalid API key provided.")
+
+    class _AlwaysFailingCompletions:
+        def __init__(self, exc: Exception):
+            self.exc = exc
+            self.calls: list[dict] = []
+
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            raise self.exc
+
+    completions = _AlwaysFailingCompletions(exc)
+    fake_client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+    monkeypatch.setattr(answer_module.config, "LLM_JSON_MODE", True)
+    monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
+    monkeypatch.setattr(answer_module, "_client", lambda: fake_client)
+
+    result = answer("How much is shipping?")
+
+    # Not a response_format capability gap, so it must surface as a normal
+    # (non-retryable) provider_error rather than silently falling back.
+    assert result["error_type"] == AnswerError.PROVIDER_ERROR
+    assert result["retryable"] is False
+    assert len(completions.calls) == 1
