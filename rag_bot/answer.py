@@ -80,7 +80,7 @@ def _numbers(text: str) -> set[str]:
     """Extract normalized numeric claims from text."""
     normalized = set()
     for match in _NUMBER_RE.findall(text):
-        normalized.add(re.sub(r"\s", "", match).replace(",", "."))
+        normalized.add(re.sub(r"\s", "", match).replace(",", ""))
     return normalized
 
 
