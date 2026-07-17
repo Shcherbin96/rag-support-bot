@@ -69,3 +69,16 @@ jobs:
       - name: Run tests with coverage gate
         if: runner.os == 'Linux'
         run: uv run pytest -q --cov=rag_bot --cov-fail-under=87
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      # Build-only: proves the image assembles from the pinned base + frozen
+      # lockfile (incl. CPU-only torch). No registry push — the Dockerfile is
+      # the artifact.
+      - name: Build image
+        run: docker build -t rag-bot:ci .
