@@ -14,10 +14,36 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = [
+    "mypy>=2.3.0",
+    "pytest>=8.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.22",
+]
 
 [tool.uv]
 package = false
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+addopts = "-m 'not live'"
+markers = ["live: hits a real LLM provider; requires a key, excluded from default runs"]
+
+[tool.coverage.report]
+exclude_also = ["if __name__ == .__main__.:", "if TYPE_CHECKING:"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["rag_bot"]
+
+[[tool.mypy.overrides]]
+module = ["chromadb.*", "sentence_transformers.*", "openai.*", "dotenv.*", "aiogram.*", "yaml.*"]
+ignore_missing_imports = true

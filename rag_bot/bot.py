@@ -20,7 +20,8 @@ dp = Dispatcher()
 ANSWER_SEMAPHORE = asyncio.Semaphore(3)
 TELEGRAM_LIMIT = 4096
 FALLBACK_MESSAGE = (
-    "I could not process the request safely. Please try again later or contact a human support agent."
+    "I could not process the request safely. Please try again later or contact a human "
+    "support agent."
 )
 
 GREETING = (
@@ -73,6 +74,9 @@ async def on_question(message: Message) -> None:
     fingerprint = _message_fingerprint(question)
 
     try:
+        # aiogram always sets .bot to the Bot instance that received the update when
+        # dispatching a handler; it's only Optional[Bot] in the type for construction.
+        assert message.bot is not None
         await message.bot.send_chat_action(message.chat.id, ChatAction.TYPING)
         async with ANSWER_SEMAPHORE:
             result = await asyncio.wait_for(

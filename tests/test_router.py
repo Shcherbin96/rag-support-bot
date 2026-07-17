@@ -1,4 +1,5 @@
 """Unit tests for the semantic router decision logic and guards."""
+
 import pytest
 
 from rag_bot.router import QueryRoute, _decide, classify_query

@@ -54,7 +54,9 @@ def _split_models(value: str) -> list[str]:
     return [model.strip() for model in value.split(",") if model.strip()]
 
 
-_default_eval_models = "gemini-2.5-flash-lite,gemini-2.5-flash" if LLM_PROVIDER == "gemini" else ANSWER_MODEL
+_default_eval_models = (
+    "gemini-2.5-flash-lite,gemini-2.5-flash" if LLM_PROVIDER == "gemini" else ANSWER_MODEL
+)
 EVAL_MODELS = _split_models(os.getenv("EVAL_MODELS", _default_eval_models))
 
 # Local multilingual embedding model.

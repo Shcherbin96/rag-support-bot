@@ -7,7 +7,7 @@ import httpx
 import openai
 
 import rag_bot.answer as answer_module
-from rag_bot.answer import AnswerError, _numbers, answer
+from rag_bot.answer import AnswerError, _numbers, _parse_model_response, answer
 
 
 class _FakeCompletions:
@@ -114,7 +114,12 @@ def test_smalltalk_is_handled_before_retrieval(monkeypatch):
 
 def test_mixed_greeting_and_question_uses_retrieval(monkeypatch):
     chunks = [
-        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
+        {
+            "id": "chunk-1",
+            "source": "shipping.md",
+            "distance": 0.2,
+            "text": "Standard shipping costs $5.99.",
+        },
     ]
     payload = {
         "answer": "Standard shipping costs $5.99.",
@@ -132,8 +137,18 @@ def test_mixed_greeting_and_question_uses_retrieval(monkeypatch):
 
 def test_answer_uses_only_validated_cited_sources(monkeypatch):
     chunks = [
-        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
-        {"id": "chunk-2", "source": "payment.md", "distance": 0.4, "text": "We accept cards and PayPal."},
+        {
+            "id": "chunk-1",
+            "source": "shipping.md",
+            "distance": 0.2,
+            "text": "Standard shipping costs $5.99.",
+        },
+        {
+            "id": "chunk-2",
+            "source": "payment.md",
+            "distance": 0.4,
+            "text": "We accept cards and PayPal.",
+        },
     ]
     payload = {
         "answer": "Standard shipping costs $5.99.",
@@ -172,13 +187,18 @@ def test_citation_footer_prefers_human_readable_title(monkeypatch):
     result = answer("How much is shipping?")
 
     assert "Sources: Shipping" in result["text"]
-    assert "02_shipping.md" not in result["text"]      # no raw filename shown to the user
-    assert result["sources"] == ["02_shipping.md"]     # machine-facing field keeps filenames
+    assert "02_shipping.md" not in result["text"]  # no raw filename shown to the user
+    assert result["sources"] == ["02_shipping.md"]  # machine-facing field keeps filenames
 
 
 def test_invalid_model_citation_fails_closed(monkeypatch):
     chunks = [
-        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
+        {
+            "id": "chunk-1",
+            "source": "shipping.md",
+            "distance": 0.2,
+            "text": "Standard shipping costs $5.99.",
+        },
     ]
     payload = {
         "answer": "Standard shipping costs $5.99.",
@@ -198,7 +218,12 @@ def test_invalid_model_citation_fails_closed(monkeypatch):
 
 def test_answer_rejects_quote_not_present_in_cited_chunk(monkeypatch):
     chunks = [
-        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
+        {
+            "id": "chunk-1",
+            "source": "shipping.md",
+            "distance": 0.2,
+            "text": "Standard shipping costs $5.99.",
+        },
     ]
     payload = {
         "answer": "Standard shipping costs $5.99.",
@@ -216,7 +241,12 @@ def test_answer_rejects_quote_not_present_in_cited_chunk(monkeypatch):
 
 def test_answer_rejects_numeric_claim_not_present_in_evidence(monkeypatch):
     chunks = [
-        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
+        {
+            "id": "chunk-1",
+            "source": "shipping.md",
+            "distance": 0.2,
+            "text": "Standard shipping costs $5.99.",
+        },
     ]
     payload = {
         "answer": "Standard shipping costs $999.99.",
@@ -268,11 +298,18 @@ def test_missing_index_error_path_returns_enum_value(monkeypatch):
 
 def test_transient_provider_error_is_marked_retryable(monkeypatch):
     chunks = [
-        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
+        {
+            "id": "chunk-1",
+            "source": "shipping.md",
+            "distance": 0.2,
+            "text": "Standard shipping costs $5.99.",
+        },
     ]
 
     monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
-    monkeypatch.setattr(answer_module, "_client", lambda: _FailingClient(RuntimeError("429 rate limit")))
+    monkeypatch.setattr(
+        answer_module, "_client", lambda: _FailingClient(RuntimeError("429 rate limit"))
+    )
 
     result = answer("How much is shipping?")
 
@@ -282,11 +319,18 @@ def test_transient_provider_error_is_marked_retryable(monkeypatch):
 
 def test_permanent_provider_error_is_not_retryable(monkeypatch):
     chunks = [
-        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
+        {
+            "id": "chunk-1",
+            "source": "shipping.md",
+            "distance": 0.2,
+            "text": "Standard shipping costs $5.99.",
+        },
     ]
 
     monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
-    monkeypatch.setattr(answer_module, "_client", lambda: _FailingClient(RuntimeError("invalid api key")))
+    monkeypatch.setattr(
+        answer_module, "_client", lambda: _FailingClient(RuntimeError("invalid api key"))
+    )
 
     result = answer("How much is shipping?")
 
@@ -296,11 +340,18 @@ def test_permanent_provider_error_is_not_retryable(monkeypatch):
 
 def test_provider_timeout_is_marked_retryable(monkeypatch):
     chunks = [
-        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
+        {
+            "id": "chunk-1",
+            "source": "shipping.md",
+            "distance": 0.2,
+            "text": "Standard shipping costs $5.99.",
+        },
     ]
 
     monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
-    monkeypatch.setattr(answer_module, "_client", lambda: _FailingClient(RuntimeError("Request timed out.")))
+    monkeypatch.setattr(
+        answer_module, "_client", lambda: _FailingClient(RuntimeError("Request timed out."))
+    )
 
     result = answer("How much is shipping?")
 
@@ -324,7 +375,12 @@ def test_client_disables_sdk_retries(monkeypatch):
 
 def test_model_contract_rejection_reason_is_logged(monkeypatch, caplog):
     chunks = [
-        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
+        {
+            "id": "chunk-1",
+            "source": "shipping.md",
+            "distance": 0.2,
+            "text": "Standard shipping costs $5.99.",
+        },
     ]
     payload = {
         "answer": "Standard shipping costs $999.99.",
@@ -349,33 +405,44 @@ def test_numbers_treats_comma_as_thousands_separator():
     assert _numbers("1,299.50") == {"1299.50"}
 
 
-def test_answer_accepts_number_written_without_thousands_comma(monkeypatch):
-    chunks = [
-        {
+def test_answer_accepts_number_written_without_thousands_comma():
+    # The comma-as-thousands-separator behavior lives in _parse_model_response's
+    # numeric-claim check, so test it there directly. Driving the whole routed
+    # answer() would drag in the semantic router, whose embedding similarities
+    # vary slightly across torch/BLAS backends and can flip a borderline query's
+    # route (e.g. "How many products do you stock?" routing out_of_domain on some
+    # platforms) - making a deterministic unit assertion non-deterministic by OS.
+    valid_chunks = {
+        "chunk-1": {
             "id": "chunk-1",
             "source": "catalog.md",
-            "distance": 0.2,
             "text": "We stock over 8,000 products across all categories.",
         },
-    ]
-    payload = {
-        "answer": "We stock over 8000 products.",
-        "citations": [{"chunk_id": "chunk-1", "quote": "over 8,000 products"}],
     }
+    raw_json = json.dumps(
+        {
+            "answer": "We stock over 8000 products.",
+            "citations": [{"chunk_id": "chunk-1", "quote": "over 8,000 products"}],
+        }
+    )
 
-    monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
-    monkeypatch.setattr(answer_module, "_client", lambda: _FakeClient(json.dumps(payload)))
+    # "8000" in the answer must be treated as covered by "8,000" in the evidence
+    # quote, so parsing succeeds instead of raising on an unsupported number.
+    answer_text, citations = _parse_model_response(raw_json, valid_chunks)
 
-    result = answer("How many products do you stock?")
-
-    assert result["error_type"] == ""
-    assert "We stock over 8000 products." in result["text"]
+    assert answer_text == "We stock over 8000 products."
+    assert citations == [{"chunk_id": "chunk-1", "quote": "over 8,000 products"}]
 
 
 def test_no_accepted_context_refuses_with_visible_log(monkeypatch, caplog):
     # All chunks are past the relevance threshold, so accepted_chunks() is empty.
     chunks = [
-        {"id": "chunk-1", "source": "shipping.md", "distance": 5.0, "text": "Standard shipping costs $5.99."},
+        {
+            "id": "chunk-1",
+            "source": "shipping.md",
+            "distance": 5.0,
+            "text": "Standard shipping costs $5.99.",
+        },
     ]
 
     def fail_client():
@@ -395,7 +462,12 @@ def test_no_accepted_context_refuses_with_visible_log(monkeypatch, caplog):
 
 def test_json_mode_on_passes_response_format(monkeypatch):
     chunks = [
-        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
+        {
+            "id": "chunk-1",
+            "source": "shipping.md",
+            "distance": 0.2,
+            "text": "Standard shipping costs $5.99.",
+        },
     ]
     payload = {
         "answer": "Standard shipping costs $5.99.",
@@ -417,7 +489,12 @@ def test_json_mode_on_passes_response_format(monkeypatch):
 
 def test_json_mode_off_omits_response_format(monkeypatch):
     chunks = [
-        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
+        {
+            "id": "chunk-1",
+            "source": "shipping.md",
+            "distance": 0.2,
+            "text": "Standard shipping costs $5.99.",
+        },
     ]
     payload = {
         "answer": "Standard shipping costs $5.99.",
@@ -439,13 +516,20 @@ def test_json_mode_off_omits_response_format(monkeypatch):
 
 def test_json_mode_bad_request_falls_back_without_response_format(monkeypatch, caplog):
     chunks = [
-        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
+        {
+            "id": "chunk-1",
+            "source": "shipping.md",
+            "distance": 0.2,
+            "text": "Standard shipping costs $5.99.",
+        },
     ]
     payload = {
         "answer": "Standard shipping costs $5.99.",
         "citations": [{"chunk_id": "chunk-1", "quote": "Standard shipping costs $5.99."}],
     }
-    exc = _bad_request_error("Invalid parameter: 'response_format' is not supported for this model.")
+    exc = _bad_request_error(
+        "Invalid parameter: 'response_format' is not supported for this model."
+    )
     fake_client = _FallbackClient(exc, json.dumps(payload))
 
     monkeypatch.setattr(answer_module.config, "LLM_JSON_MODE", True)
@@ -466,7 +550,12 @@ def test_json_mode_bad_request_falls_back_without_response_format(monkeypatch, c
 
 def test_json_mode_unrelated_bad_request_does_not_retry(monkeypatch):
     chunks = [
-        {"id": "chunk-1", "source": "shipping.md", "distance": 0.2, "text": "Standard shipping costs $5.99."},
+        {
+            "id": "chunk-1",
+            "source": "shipping.md",
+            "distance": 0.2,
+            "text": "Standard shipping costs $5.99.",
+        },
     ]
     exc = _bad_request_error("Invalid API key provided.")
 
