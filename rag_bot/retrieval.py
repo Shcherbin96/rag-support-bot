@@ -1,5 +1,6 @@
 """Semantic retrieval over the local Chroma knowledge-base index."""
 
+from functools import lru_cache
 from typing import Any
 
 import chromadb
@@ -18,8 +19,21 @@ class KnowledgeBaseNotReadyError(RuntimeError):
     """Raised when retrieval is attempted before the Chroma index exists."""
 
 
+@lru_cache(maxsize=1)
 def _collection() -> Collection:
-    """Open the persisted collection with the same embedding model used at ingestion."""
+    """Open the persisted collection with the same embedding model used at ingestion.
+
+    Cached (built once per process) rather than rebuilt on every retrieve()
+    call: constructing the PersistentClient and loading the
+    SentenceTransformer embedding model is expensive, and rebuilding it on
+    every call also meant concurrent unwarmed calls could race each other
+    during that cold-start construction. config.CHROMA_DIR and
+    config.EMBED_MODEL are fixed module-level constants for the process
+    lifetime, so caching the resulting collection is safe. lru_cache is
+    thread-safe in CPython (the GIL serializes the check-and-populate), so
+    concurrent callers block behind the same cache-fill rather than each
+    starting their own.
+    """
     client = chromadb.PersistentClient(path=str(config.CHROMA_DIR))
     embed_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
         model_name=config.EMBED_MODEL
