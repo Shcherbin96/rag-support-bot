@@ -295,3 +295,24 @@ def test_answer_accepts_number_written_without_thousands_comma(monkeypatch):
 
     assert result["error_type"] == ""
     assert "We stock over 8000 products." in result["text"]
+
+
+def test_no_accepted_context_refuses_with_visible_log(monkeypatch, caplog):
+    # All chunks are past the relevance threshold, so accepted_chunks() is empty.
+    chunks = [
+        {"id": "chunk-1", "source": "shipping.md", "distance": 5.0, "text": "Standard shipping costs $5.99."},
+    ]
+
+    def fail_client():
+        raise AssertionError("LLM should not be called when no context is accepted")
+
+    monkeypatch.setattr(answer_module, "retrieve", lambda query, k: chunks)
+    monkeypatch.setattr(answer_module, "_client", fail_client)
+
+    with caplog.at_level("INFO", logger="nestwell-answer"):
+        result = answer("How much is shipping?")
+
+    # Controlled refusal, not a failure: error_type stays empty by contract.
+    assert result["error_type"] == ""
+    assert result["refusal_reason"] == "no_accepted_context"
+    assert "refusal reason=no_accepted_context" in caplog.text

@@ -206,6 +206,11 @@ def answer(query: str, k: int = config.TOP_K, model: str = config.ANSWER_MODEL) 
 
     context_chunks = accepted_chunks(chunks)
     if not context_chunks:
+        # This is a controlled refusal, not a failure, so error_type stays "" and
+        # bot.py logs it at INFO like any success. Log explicitly here so a grounded
+        # question that retrieved nothing acceptable is still visible in the logs,
+        # distinguishable from a served answer.
+        log.info("refusal reason=no_accepted_context retrieved=%d accepted=0", len(chunks))
         result = _success_result(REFUSAL_TEXT, [], chunks, route)
         result["refusal_reason"] = "no_accepted_context"
         return result
