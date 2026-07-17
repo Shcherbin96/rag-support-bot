@@ -7,6 +7,7 @@ Run:
 
 import os
 import subprocess
+import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -191,6 +192,45 @@ def _summary_sentence(results: list[dict]) -> str:
     )
 
 
+def evaluate_degradation(rows: list[dict], fail_under: float | None) -> list[str]:
+    """Return CI quality-gate failure messages for a completed eval run.
+
+    The gate is OFF entirely when `fail_under` is None (the default for a manual
+    `uv run python eval/run_eval.py`) — it returns no failures even if the run
+    contains hallucinations, so local/manual runs never exit non-zero.
+
+    When active (a float floor, e.g. from `EVAL_FAIL_UNDER`), two independent
+    checks apply:
+      - Zero hallucinations is a hard safety invariant: any hallucination is a
+        failure regardless of pass-rate.
+      - Pass-rate must clear `fail_under`. This floor is intentionally generous
+        because pass/fail has normal model-nondeterminism variance and most
+        misses are the guardrail failing closed (a refusal), not a wrong answer.
+    """
+    if fail_under is None:
+        return []
+
+    failures = []
+
+    total_hallucinations = sum(row["hallucinations"] for row in rows)
+    if total_hallucinations > 0:
+        failures.append(
+            f"Eval degradation: {total_hallucinations} hallucination(s) — quality gate failed"
+        )
+
+    total_passed = sum(row["passed"] for row in rows)
+    total_cases = sum(row["total"] for row in rows)
+    if total_cases > 0:
+        pass_rate = total_passed / total_cases
+        if pass_rate < fail_under:
+            failures.append(
+                f"Eval degradation: pass-rate {pass_rate:.2f} ({total_passed}/{total_cases}) "
+                f"is below the required floor {fail_under:.2f}"
+            )
+
+    return failures
+
+
 def _case_results_table(rows: list[dict]) -> str:
     lines = [
         "| Model | Case | Type | OK | Route | Sources | Error |",
@@ -264,6 +304,14 @@ def main() -> None:
         encoding="utf-8",
     )
     print(f"\nSaved to {RESULTS} and {PER_CASE_RESULTS}")
+
+    fail_under_raw = os.getenv("EVAL_FAIL_UNDER")
+    fail_under = float(fail_under_raw) if fail_under_raw else None
+    failures = evaluate_degradation(rows, fail_under)
+    if failures:
+        for message in failures:
+            print(message, file=sys.stderr)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

@@ -167,3 +167,57 @@ def test_current_commit_prefers_github_sha(monkeypatch):
     monkeypatch.setenv("GITHUB_SHA", "abc123")
 
     assert run_eval._current_commit() == "abc123"
+
+
+def _rows(passed: int, total: int, hallucinations: int) -> list[dict]:
+    return [{"passed": passed, "total": total, "hallucinations": hallucinations}]
+
+
+def test_evaluate_degradation_gate_off_by_default_even_with_hallucinations():
+    # No EVAL_FAIL_UNDER (fail_under=None) must never fail, even if the run
+    # contains hallucinations — manual `uv run python eval/run_eval.py` always
+    # exits 0 unless the gate is explicitly activated.
+    rows = _rows(passed=10, total=33, hallucinations=3)
+
+    assert run_eval.evaluate_degradation(rows, None) == []
+
+
+def test_evaluate_degradation_healthy_run_passes():
+    rows = _rows(passed=30, total=33, hallucinations=0)
+
+    assert run_eval.evaluate_degradation(rows, 0.75) == []
+
+
+def test_evaluate_degradation_hallucination_hard_fails_regardless_of_pass_rate():
+    # Pass-rate clears the floor comfortably, but any hallucination is a hard
+    # fail — it is the safety invariant, not subject to the generous floor.
+    rows = _rows(passed=33, total=33, hallucinations=1)
+
+    failures = run_eval.evaluate_degradation(rows, 0.75)
+
+    assert len(failures) == 1
+    assert "1 hallucination(s)" in failures[0]
+    assert "quality gate failed" in failures[0]
+
+
+def test_evaluate_degradation_pass_rate_below_floor_fails():
+    rows = _rows(passed=20, total=33, hallucinations=0)  # ~0.606
+
+    failures = run_eval.evaluate_degradation(rows, 0.75)
+
+    assert len(failures) == 1
+    assert "pass-rate" in failures[0]
+
+
+def test_evaluate_degradation_reports_both_failures_independently():
+    rows = _rows(passed=10, total=33, hallucinations=2)
+
+    failures = run_eval.evaluate_degradation(rows, 0.75)
+
+    assert len(failures) == 2
+
+
+def test_evaluate_degradation_handles_zero_total_cases():
+    rows = _rows(passed=0, total=0, hallucinations=0)
+
+    assert run_eval.evaluate_degradation(rows, 0.75) == []
