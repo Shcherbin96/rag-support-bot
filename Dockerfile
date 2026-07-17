@@ -1,7 +1,7 @@
 # Demo bot image for any container host: Fly.io, Render, VPS, etc.
 # Digest-pinned base and uv binary, like the SHA-pinned GitHub Actions — same
 # supply-chain bar everywhere; dependabot's docker ecosystem keeps both fresh.
-FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
+FROM python:3.14-slim@sha256:d3400aa122fa42cf0af0dbe8ec3091b047eac5c8f7e3539f7135e86d855dc015
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc /uv /usr/local/bin/uv
 
