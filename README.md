@@ -30,7 +30,7 @@ The goal is not to make a chatbot that sounds confident. The goal is to make a s
 - **English Telegram UX** — `/start` and examples are written for an international reviewer.
 - **Telegram interface** — `aiogram` bot with timeout, concurrency limit, privacy-safer logging, and a controlled fallback message.
 - **Evaluation harness** — test-set based evaluation for grounded answers, refusals, small-talk, hallucination count, runtime/model errors, and per-case results.
-- **Docker-ready demo** — includes a Dockerfile for containerized bot runtime.
+- **Hardened Docker image** — digest-pinned base and `uv`, `--frozen --no-dev` install, non-root runtime user, and CPU-only `torch` on Linux (the image dropped from 19.2GB to 5.44GB built / ~1.6GB shippable after that change). Built in CI on every PR.
 
 ## Architecture
 
@@ -70,8 +70,11 @@ rag_bot/
   bot.py          # Telegram interface and runtime error boundary
 
 data/knowledge_base/   # demo business documents
-eval/                  # evaluation harness and results
+eval/                  # evaluation harness, test sets, and committed results
 tests/                 # pytest tests
+docs/                  # design notes and a reproducible demo transcript
+Dockerfile             # hardened container image (see Docker section)
+.github/               # CI workflow (lint/mypy, 3-OS test matrix, Docker build) + dependabot
 ```
 
 ## Tech stack
@@ -134,6 +137,7 @@ uv run python -m rag_bot.bot
 | `TOP_K` | No | `4` | Number of retrieved chunks. |
 | `RETRIEVAL_MAX_DISTANCE` | No | `1.2` | Maximum accepted chunk distance before that chunk is excluded from context. |
 | `LLM_TIMEOUT` | No | `30` | Per-request LLM timeout in seconds; kept below the bot's 45s wait so a stalled provider fails closed. |
+| `LLM_JSON_MODE` | No | `true` | Requests strict JSON via `response_format={"type": "json_object"}`; falls back to prompt-only JSON (the system prompt already asks for it) if the provider/model rejects the parameter with a 400. |
 | `ROUTER_IN_DOMAIN_MIN` | No | `0.42` | Router: minimum cosine similarity to an in-domain anchor to accept a query as in-domain. |
 | `ROUTER_MARGIN` | No | `0.05` | Router: how much closer to an in-domain anchor than an out-of-domain anchor a query must be. |
 | `ROUTER_SMALLTALK_MIN` | No | `0.50` | Router: minimum similarity to a small-talk anchor to route as small-talk. |
@@ -151,13 +155,27 @@ The CI workflow is designed to pass without real secrets. Live LLM tests are ski
 
 ## Evaluation
 
-Run the evaluation harness:
+Two independent layers check different failure modes.
+
+**Offline routing accuracy gate — runs in CI, no API key needed.** `tests/test_router_routing_set.py` classifies every case in [`eval/routing_set.yaml`](eval/routing_set.yaml) with the LLM-free semantic router. Adversarial (prompt-injection) cases must match `adversarial` exactly — a miss is a safety regression, never tolerated. Non-adversarial cases are graded against an accuracy floor (≥93%) instead of an exact match: adding the 3-OS CI matrix (below) surfaced that the sentence-transformers embedding backend returns slightly different cosine similarities across platforms, which can flip a case sitting right on a decision threshold. Asserting all ~50 cases exactly would test the numerical backend, not the router's logic, so the gate tolerates a couple of margin flips while a genuine regression (which sinks accuracy far below the floor) still fails the build. This is the matrix catching real cross-platform nondeterminism, not a weakened safety bar — adversarial cases still have zero tolerance.
+
+**Live grounded-answer eval — manual run against a real provider, committed report.** [`eval/run_eval.py`](eval/run_eval.py) runs the 33-case test set in [`eval/test_set.yaml`](eval/test_set.yaml):
 
 ```bash
 PYTHONPATH=. uv run python eval/run_eval.py
 ```
 
-The report is generated from measured results and includes timestamp, commit SHA when available, retrieval threshold, pass counts, hallucination count, runtime/model error count, and per-case details. The committed `eval/results.md` is a reproducibility note, not a permanent quality claim.
+The latest committed run — `google/gemini-2.5-flash-lite` via OpenRouter — is in [`eval/results.md`](eval/results.md), with per-case detail in [`eval/case_results.md`](eval/case_results.md):
+
+| Passed | Grounded | Refusal | Small-talk | Hallucinations | Avg latency |
+|---:|---:|---:|---:|---:|---:|
+| 29/33 | 16/19 | 10/11 | 3/3 | 0 | ~0.96s |
+
+Zero hallucinations: the citation/quote/number validator in `answer.py` never let a fabricated claim through. Of the 4 misses, 3 are the guardrail failing closed — the model's structured response was rejected by the citation/quote validator (`model_contract_error`), so the bot returned a refuse-to-human message rather than an unvalidated answer. The 4th case is a served, citation-valid answer that referenced a different knowledge-base document than the one the eval expected — not a hallucination, but not a match either. This is a deliberately precision-first trade-off: the bot would rather refuse or miss than assert something it cannot ground in a cited chunk.
+
+**A real bug the live eval caught.** An earlier run showed a systematic false refusal on facts stored as bold Markdown (phone number, prices, warranty terms). The citation validator compared the model's plain-text quote against the raw chunk text, emphasis markers included, so a verbatim quote of a bold fact never matched as a substring and was rejected as unsupported evidence. The fix normalizes both sides for Markdown emphasis characters before the containment check, without loosening what counts as evidence — every digit, letter, `$`, `%`, and other punctuation still has to match, so a fabricated quote is rejected exactly as before. See `_normalize_for_quote_match` in `rag_bot/answer.py`.
+
+The committed `eval/results.md` is a reproducibility note, not a permanent quality claim — rerun it before treating it as current.
 
 ## Safety design and limitations
 
@@ -173,12 +191,12 @@ Known limitations:
 
 - The router is an LLM-free semantic anchor-similarity gate, **not a production intent classifier**: it relies on curated anchor phrases and calibrated thresholds (`ROUTER_IN_DOMAIN_MIN`, `ROUTER_MARGIN`, `ROUTER_SMALLTALK_MIN`) and should be tuned or replaced for broader production domains.
 - The embedding model is loaded lazily on the first non-trivial message (for both routing and retrieval), so the first response after a fresh start can be slow.
-- Exact evidence-quote validation is stronger than chunk-ID membership, but it is still not a full entailment checker.
+- Exact evidence-quote validation (Markdown-insensitive, so bold/formatted KB facts still validate) is stronger than chunk-ID membership, but it is still not a full entailment checker — a quote could in principle support a different claim than the answer makes.
 - Vector-distance thresholding alone is not a reliable domain boundary, which is why routing and citation validation are separate layers.
 - The demo knowledge base is small and synthetic.
 - The eval set is useful for regression checks but still limited; production use would need a larger labeled set and monitoring.
 - The Telegram bot uses long polling rather than webhook deployment.
-- The Dockerfile is a demo image, not a hardened production container.
+- The embedding model (`sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`) is multilingual, but the demo — knowledge base, router anchors, prompts, and UX — is English-only; no multilingual behavior is exercised or tested.
 
 ## Tests and CI
 
@@ -190,7 +208,15 @@ uv run python -m rag_bot.ingestion
 uv run pytest -q
 ```
 
-GitHub Actions runs dependency installation, index build, and pytest. Deterministic unit tests cover the router decision rule and adversarial detection, a labeled routing regression set, relevance checks, structured citation validation, evidence-quote validation, eval fail-fast behavior, provider configuration, Telegram helper behavior, and fail-closed paths. Optional live LLM tests are skipped without the selected provider API key.
+`67 passed, 2 deselected` (the 2 deselected are `live`-marked tests that hit a real LLM provider). Deterministic unit tests cover the router decision rule and adversarial detection, the labeled routing accuracy gate described above, relevance checks, structured citation validation, Markdown-insensitive evidence-quote validation, eval fail-fast behavior, provider configuration, Telegram helper behavior, and fail-closed paths.
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every PR:
+
+- **`lint`** — `ruff check`, `ruff format --check`, and strict `mypy rag_bot`.
+- **`test`** — a 3-OS matrix (Ubuntu, macOS, Windows). Linux additionally gates on `pytest --cov=rag_bot --cov-fail-under=87` (the last local run measured ~91% total coverage); macOS and Windows run the same suite without the coverage gate, since the matrix's job is catching platform-specific behavior, not re-deriving the same coverage number three times.
+- **`docker`** — builds the image from the pinned base and frozen lockfile (build-only, no registry push).
+
+GitHub Actions are pinned by commit SHA rather than tag, and Dependabot (`.github/dependabot.yml`) watches the `github-actions`, `uv`, and `docker` ecosystems weekly. Optional `live` tests are excluded from the default run by a pytest marker and are skipped without the selected provider's API key.
 
 ## Docker
 
@@ -199,7 +225,7 @@ docker build -t rag-support-bot .
 docker run --env-file .env rag-support-bot
 ```
 
-The Docker image builds the vector index during image build and starts the Telegram bot at runtime.
+The image builds the vector index during image build (so the running container never needs network access to start serving) and starts the Telegram bot at runtime. Hardening applied: a digest-pinned `python:3.12-slim` base and digest-pinned `uv` binary, `uv sync --frozen --no-dev` (lockfile-exact, no dev tooling in the runtime image), a non-root user, and CPU-only `torch` on Linux — routing off the ~6GB of CUDA runtime libraries PyPI's default Linux wheel bundles for a CPU-inference workload dropped the built image from 19.2GB to 5.44GB (~1.6GB shippable/registry footprint). CI builds this image on every PR (build-only, no push).
 
 ## Why this project matters
 
