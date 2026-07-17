@@ -1,7 +1,23 @@
 """Evaluation harness for grounded answers, refusals, and small-talk.
 
+## Reproducing
+
+The committed `eval/results.md` report (29/33, 0 hallucinations) was generated
+against `google/gemini-2.5-flash-lite` via OpenRouter, not direct Gemini —
+Google's Gemini free tier caps that model at 20 requests/day, too low for a
+33-case run. Reproduce it with:
+
+    LLM_PROVIDER=gemini GEMINI_API_KEY=<OpenRouter key> \\
+    LLM_BASE_URL=https://openrouter.ai/api/v1 \\
+    ANSWER_MODEL=google/gemini-2.5-flash-lite EVAL_MODELS=google/gemini-2.5-flash-lite \\
+    PYTHONPATH=. uv run python eval/run_eval.py
+
+Set `EVAL_FAIL_UNDER` (e.g. `0.75`) to turn on the CI degradation gate: any
+hallucination is a hard failure, and pass-rate must clear the floor. Unset
+(the default), the run always exits 0 and just writes the report.
+
 The report is generated from measured results instead of hard-coded claims.
-Run:
+Run (against the configured default provider):
     PYTHONPATH=. uv run python eval/run_eval.py
 """
 

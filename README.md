@@ -74,7 +74,7 @@ eval/                  # evaluation harness, test sets, and committed results
 tests/                 # pytest tests
 docs/                  # design notes and a reproducible demo transcript
 Dockerfile             # hardened container image (see Docker section)
-.github/               # CI workflow (lint/mypy, 3-OS test matrix, Docker build) + dependabot
+.github/               # CI workflow (lint/mypy, 3-OS test matrix, Docker build), scheduled eval, + dependabot
 ```
 
 ## Tech stack
@@ -159,9 +159,18 @@ Two independent layers check different failure modes.
 
 **Offline routing accuracy gate — runs in CI, no API key needed.** `tests/test_router_routing_set.py` classifies every case in [`eval/routing_set.yaml`](eval/routing_set.yaml) with the LLM-free semantic router. Adversarial (prompt-injection) cases must match `adversarial` exactly — a miss is a safety regression, never tolerated. Non-adversarial cases are graded against an accuracy floor (≥93%) instead of an exact match: adding the 3-OS CI matrix (below) surfaced that the sentence-transformers embedding backend returns slightly different cosine similarities across platforms, which can flip a case sitting right on a decision threshold. Asserting all ~50 cases exactly would test the numerical backend, not the router's logic, so the gate tolerates a couple of margin flips while a genuine regression (which sinks accuracy far below the floor) still fails the build. This is the matrix catching real cross-platform nondeterminism, not a weakened safety bar — adversarial cases still have zero tolerance.
 
-**Live grounded-answer eval — manual run against a real provider, committed report.** [`eval/run_eval.py`](eval/run_eval.py) runs the 33-case test set in [`eval/test_set.yaml`](eval/test_set.yaml):
+**Live grounded-answer eval — scheduled + manual run against a real provider, committed report.** [`eval/run_eval.py`](eval/run_eval.py) runs the 33-case test set in [`eval/test_set.yaml`](eval/test_set.yaml) against the configured provider:
 
 ```bash
+PYTHONPATH=. uv run python eval/run_eval.py
+```
+
+The committed report was produced via OpenRouter rather than direct Gemini, because Google's Gemini free tier caps `gemini-2.5-flash-lite` at 20 requests/day — too low for a 33-case run. Reproduce it exactly with:
+
+```bash
+LLM_PROVIDER=gemini GEMINI_API_KEY=<OpenRouter key> \
+LLM_BASE_URL=https://openrouter.ai/api/v1 \
+ANSWER_MODEL=google/gemini-2.5-flash-lite EVAL_MODELS=google/gemini-2.5-flash-lite \
 PYTHONPATH=. uv run python eval/run_eval.py
 ```
 
@@ -175,7 +184,11 @@ Zero hallucinations: the citation/quote/number validator in `answer.py` never le
 
 **A real bug the live eval caught.** An earlier run showed a systematic false refusal on facts stored as bold Markdown (phone number, prices, warranty terms). The citation validator compared the model's plain-text quote against the raw chunk text, emphasis markers included, so a verbatim quote of a bold fact never matched as a substring and was rejected as unsupported evidence. The fix normalizes both sides for Markdown emphasis characters before the containment check, without loosening what counts as evidence — every digit, letter, `$`, `%`, and other punctuation still has to match, so a fabricated quote is rejected exactly as before. See `_normalize_for_quote_match` in `rag_bot/answer.py`.
 
-The committed `eval/results.md` is a reproducibility note, not a permanent quality claim — rerun it before treating it as current.
+The committed `eval/results.md` is a reproducibility note, not a permanent quality claim — rerun it before treating it as current. A scheduled workflow now keeps it from going stale silently: see **Continuous eval** below.
+
+### Continuous eval
+
+[`.github/workflows/evals.yml`](.github/workflows/evals.yml) runs the same 33-case eval automatically — `workflow_dispatch` for on-demand runs plus a Monday 06:00 UTC cron — against OpenRouter, reusing the `OPENROUTER_API_KEY` secret already configured for this repo. The run sets `EVAL_FAIL_UNDER=0.75`, which activates `evaluate_degradation()` in `eval/run_eval.py`: any hallucination is a hard failure regardless of pass-rate (the zero-hallucination safety invariant), and pass-rate must clear the floor (generous, since misses are mostly the guardrail failing closed rather than a wrong answer — normal model nondeterminism shouldn't page anyone). The report is uploaded as a workflow artifact on every run, and a GitHub issue is opened automatically when the gate fails. The gate is off by default for a manual `uv run python eval/run_eval.py` — it always exits 0 and just writes the report unless `EVAL_FAIL_UNDER` is set.
 
 ## Safety design and limitations
 
@@ -208,13 +221,15 @@ uv run python -m rag_bot.ingestion
 uv run pytest -q
 ```
 
-`67 passed, 2 deselected` (the 2 deselected are `live`-marked tests that hit a real LLM provider). Deterministic unit tests cover the router decision rule and adversarial detection, the labeled routing accuracy gate described above, relevance checks, structured citation validation, Markdown-insensitive evidence-quote validation, eval fail-fast behavior, provider configuration, Telegram helper behavior, and fail-closed paths.
+`78 passed, 2 deselected` (the 2 deselected are `live`-marked tests that hit a real LLM provider). Deterministic unit tests cover the router decision rule and adversarial detection, the labeled routing accuracy gate described above, relevance checks, structured citation validation, Markdown-insensitive evidence-quote validation, eval fail-fast behavior and degradation-gate logic, provider configuration, Telegram helper behavior, and fail-closed paths.
 
 GitHub Actions (`.github/workflows/ci.yml`) runs on every PR:
 
 - **`lint`** — `ruff check`, `ruff format --check`, and strict `mypy rag_bot`.
 - **`test`** — a 3-OS matrix (Ubuntu, macOS, Windows). Linux additionally gates on `pytest --cov=rag_bot --cov-fail-under=87` (the last local run measured ~91% total coverage); macOS and Windows run the same suite without the coverage gate, since the matrix's job is catching platform-specific behavior, not re-deriving the same coverage number three times.
 - **`docker`** — builds the image from the pinned base and frozen lockfile (build-only, no registry push).
+
+A separate workflow, [`.github/workflows/evals.yml`](.github/workflows/evals.yml), runs the live grounded-answer eval on `workflow_dispatch` and a Monday 06:00 UTC cron, gated with `EVAL_FAIL_UNDER=0.75` and auto-filing a GitHub issue on degradation — see **Continuous eval** above.
 
 GitHub Actions are pinned by commit SHA rather than tag, and Dependabot (`.github/dependabot.yml`) watches the `github-actions`, `uv`, and `docker` ecosystems weekly. Optional `live` tests are excluded from the default run by a pytest marker and are skipped without the selected provider's API key.
 
@@ -225,7 +240,7 @@ docker build -t rag-support-bot .
 docker run --env-file .env rag-support-bot
 ```
 
-The image builds the vector index during image build (so the running container never needs network access to start serving) and starts the Telegram bot at runtime. Hardening applied: a digest-pinned `python:3.12-slim` base and digest-pinned `uv` binary, `uv sync --frozen --no-dev` (lockfile-exact, no dev tooling in the runtime image), a non-root user, and CPU-only `torch` on Linux — routing off the ~6GB of CUDA runtime libraries PyPI's default Linux wheel bundles for a CPU-inference workload dropped the built image from 19.2GB to 5.44GB (~1.6GB shippable/registry footprint). CI builds this image on every PR (build-only, no push).
+The image builds the vector index during image build (so the running container never needs network access to start serving) and starts the Telegram bot at runtime. Hardening applied: a digest-pinned `python:3.12-slim` base and digest-pinned `uv` binary, `uv sync --frozen --no-dev` (lockfile-exact, no dev tooling in the runtime image), a non-root user, and CPU-only `torch` on Linux — routing off the CUDA-enabled torch stack (torch's bundled CUDA/cuDNN binaries plus the `nvidia-*` wheels) that PyPI's default Linux wheel pulls in for a CPU-inference workload dropped the built image from 19.2GB to ~5.4GB (~1.6GB shippable/registry footprint). CI builds this image on every PR (build-only, no push).
 
 ## Why this project matters
 
