@@ -46,11 +46,6 @@ def retrieve(query: str, k: int = config.TOP_K) -> list[dict]:
     ]
 
 
-def is_relevant(chunks: list[dict], max_distance: float = config.RETRIEVAL_MAX_DISTANCE) -> bool:
-    """Return whether the best retrieved chunk is relevant enough to call the LLM."""
-    return bool(chunks) and chunks[0]["distance"] <= max_distance
-
-
 def accepted_chunks(
     chunks: list[dict], max_distance: float = config.RETRIEVAL_MAX_DISTANCE
 ) -> list[dict]:
