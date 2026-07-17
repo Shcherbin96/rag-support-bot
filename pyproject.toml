@@ -8,9 +8,10 @@ dependencies = [
     "chromadb>=0.5",             # local vector database for knowledge-base chunks
     "numpy>=1.26",               # cosine math in the semantic router
     "sentence-transformers>=3.0", # multilingual local embeddings
-    "aiogram>=3.13",             # Telegram bot framework
+    "aiogram>=3.29.1",           # Telegram bot framework (floor skips the yanked 3.29.0)
     "python-dotenv>=1.0",        # environment variable loading from .env
     "pyyaml>=6.0",               # eval test-set parser
+    "torch>=2.12",               # direct dep so [tool.uv.sources] can route it to the CPU index on Linux
 ]
 
 [dependency-groups]
@@ -23,6 +24,20 @@ dev = [
 
 [tool.uv]
 package = false
+
+[tool.uv.sources]
+# sentence-transformers pulls torch transitively; PyPI's Linux torch wheels
+# bundle ~6GB of CUDA runtime libraries this CPU-inference bot never uses.
+# Route Linux only to the official CPU-only build; macOS/Windows (CI + local
+# dev) keep resolving from PyPI, whose wheels are already CPU-sized.
+torch = [
+    { index = "pytorch-cpu", marker = "sys_platform == 'linux'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
