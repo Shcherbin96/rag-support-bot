@@ -8,7 +8,7 @@ dependencies = [
     "chromadb>=0.5",             # local vector database for knowledge-base chunks
     "numpy>=1.26",               # cosine math in the semantic router
     "sentence-transformers>=3.0", # multilingual local embeddings
-    "aiogram>=3.13",             # Telegram bot framework
+    "aiogram>=3.29.1",             # Telegram bot framework
     "python-dotenv>=1.0",        # environment variable loading from .env
     "pyyaml>=6.0",               # eval test-set parser
 ]
