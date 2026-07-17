@@ -3,9 +3,11 @@
 import json
 import logging
 import re
+from enum import StrEnum
 from json import JSONDecodeError
+from typing import NotRequired, TypedDict
 
-from openai import OpenAI
+from openai import BadRequestError, OpenAI
 
 from rag_bot import config
 from rag_bot.retrieval import KnowledgeBaseNotReadyError, accepted_chunks, retrieve
@@ -13,6 +15,42 @@ from rag_bot.router import QueryRoute, classify_query
 
 log = logging.getLogger("nestwell-answer")
 
+
+class AnswerError(StrEnum):
+    """Machine-readable error taxonomy for answer() failure paths.
+
+    Values are frozen: bot.py, eval/run_eval.py, and downstream consumers
+    compare against these exact strings, so they must not change.
+    """
+
+    MISSING_INDEX = "missing_index"
+    RETRIEVAL_ERROR = "retrieval_error"
+    PROVIDER_ERROR = "provider_error"
+    MODEL_CONTRACT_ERROR = "model_contract_error"
+
+
+class AnswerResult(TypedDict):
+    """The result payload returned by answer(). Still a plain dict at runtime.
+
+    bot.py and eval/run_eval.py index this by key (result["text"], .get("sources"),
+    etc.), so this stays a TypedDict rather than a dataclass to keep that call
+    pattern unchanged.
+    """
+
+    text: str
+    sources: list[str]
+    chunks: list[dict]
+    route: str
+    error_type: str
+    retryable: bool
+    refusal_reason: NotRequired[str]  # only set on the context-empty refusal path
+
+
+# The phrase "Return strict JSON" below does double duty: it is also what makes
+# this prompt eligible for response_format={"type": "json_object"} mode, which
+# OpenAI-compatible APIs require the word "json" to appear in the conversation.
+# Do not remove/reword it away from containing "JSON" even if the schema text
+# around it changes.
 SYSTEM_PROMPT = (
     "You are a customer-support assistant for the Nestwell online store. "
     "Answer factual store questions only from the supplied knowledge-base chunks. "
@@ -56,6 +94,9 @@ _RETRYABLE_PROVIDER_MARKERS = (
     "504",
     "service unavailable",
 )
+# Markers that indicate a 400 was caused by the response_format parameter itself
+# rather than some other request problem, i.e. a provider capability gap.
+_JSON_MODE_UNSUPPORTED_MARKERS = ("response_format", "json", "unsupported")
 
 
 def _client() -> OpenAI:
@@ -90,25 +131,46 @@ def _is_retryable_provider_error(exc: Exception) -> bool:
     return any(marker in message for marker in _RETRYABLE_PROVIDER_MARKERS)
 
 
+def _completion_kwargs(model: str, messages: list[dict], *, json_mode: bool) -> dict:
+    """Build chat.completions.create() kwargs, optionally requesting JSON mode."""
+    kwargs: dict = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.2,
+        "max_tokens": 500,
+    }
+    if json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
+    return kwargs
+
+
+def _is_json_mode_unsupported(exc: Exception) -> bool:
+    """Return whether a BadRequestError looks like a response_format capability gap."""
+    if not isinstance(exc, BadRequestError):
+        return False
+    message = str(exc).casefold()
+    return any(marker in message for marker in _JSON_MODE_UNSUPPORTED_MARKERS)
+
+
 def _error_result(
     route: QueryRoute | str,
-    error_type: str,
+    error_type: AnswerError,
     chunks: list[dict] | None = None,
     *,
     retryable: bool = False,
-) -> dict:
+) -> AnswerResult:
     """Return a controlled refusal with a machine-readable error type."""
     return {
         "text": REFUSAL_TEXT,
         "sources": [],
         "chunks": chunks or [],
         "route": route.value if isinstance(route, QueryRoute) else str(route),
-        "error_type": error_type,
+        "error_type": error_type.value,
         "retryable": retryable,
     }
 
 
-def _success_result(text: str, sources: list[str], chunks: list[dict], route: QueryRoute | str) -> dict:
+def _success_result(text: str, sources: list[str], chunks: list[dict], route: QueryRoute | str) -> AnswerResult:
     """Return a normalized successful result payload."""
     return {
         "text": text,
@@ -186,7 +248,7 @@ def _parse_model_response(raw_text: str, valid_chunks: dict[str, dict]) -> tuple
     return answer_text, validated
 
 
-def answer(query: str, k: int = config.TOP_K, model: str = config.ANSWER_MODEL) -> dict:
+def answer(query: str, k: int = config.TOP_K, model: str = config.ANSWER_MODEL) -> AnswerResult:
     """Return a grounded answer plus validated sources and retrieved chunks."""
     route = classify_query(query)
 
@@ -199,10 +261,10 @@ def answer(query: str, k: int = config.TOP_K, model: str = config.ANSWER_MODEL) 
     try:
         chunks = retrieve(query, k=k)
     except KnowledgeBaseNotReadyError:
-        return _error_result(route, "missing_index")
+        return _error_result(route, AnswerError.MISSING_INDEX)
     except Exception:
         log.warning("retrieval_error", exc_info=True)
-        return _error_result(route, "retrieval_error")
+        return _error_result(route, AnswerError.RETRIEVAL_ERROR)
 
     context_chunks = accepted_chunks(chunks)
     if not context_chunks:
@@ -220,22 +282,34 @@ def answer(query: str, k: int = config.TOP_K, model: str = config.ANSWER_MODEL) 
         for chunk in context_chunks
     )
     user_message = f"Knowledge-base chunks:\n{context}\n\nCustomer question: {query}"
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_message},
+    ]
 
     try:
-        response = _client().chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_message},
-            ],
-            temperature=0.2,
-            max_tokens=500,
-        )
+        client = _client()
+        json_mode = config.LLM_JSON_MODE
+        try:
+            response = client.chat.completions.create(
+                **_completion_kwargs(model, messages, json_mode=json_mode)
+            )
+        except BadRequestError as exc:
+            if not json_mode or not _is_json_mode_unsupported(exc):
+                raise
+            # Graceful degradation: some providers/models reject response_format
+            # with a 400. Retry once in prompt-only JSON mode; SYSTEM_PROMPT
+            # already instructs "Return strict JSON" and _parse_model_response
+            # already strips code fences, so the contract still holds.
+            log.info("json_mode_unsupported provider fell back to prompt-only json")
+            response = client.chat.completions.create(
+                **_completion_kwargs(model, messages, json_mode=False)
+            )
         raw_text = response.choices[0].message.content or ""
     except Exception as exc:
         return _error_result(
             route,
-            "provider_error",
+            AnswerError.PROVIDER_ERROR,
             chunks,
             retryable=_is_retryable_provider_error(exc),
         )
@@ -249,7 +323,7 @@ def answer(query: str, k: int = config.TOP_K, model: str = config.ANSWER_MODEL) 
         # intentionally strict, so this also reveals false refusals (e.g. a
         # correct answer phrasing a number the cited quote does not contain).
         log.info("model_contract_rejected reason=%s", exc)
-        return _error_result(route, "model_contract_error", chunks)
+        return _error_result(route, AnswerError.MODEL_CONTRACT_ERROR, chunks)
 
     cited_ids = {citation["chunk_id"] for citation in citations}
     cited_chunks = [chunk for chunk in context_chunks if chunk["id"] in cited_ids]
