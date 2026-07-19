@@ -255,6 +255,13 @@ This repository demonstrates practical AI automation skills:
 - documenting trade-offs and limitations clearly;
 - packaging an AI assistant demo so it can be reviewed by international hiring teams.
 
+## Portfolio & demo
+
+- [Case study](docs/portfolio-case.md) — the engineering decisions and the
+  measured result, written for a technical reviewer.
+- [Demo script](docs/demo-script.md) — a 5–7 minute walkthrough.
+- [Changelog](CHANGELOG.md) — released as **v1.0.0**.
+
 ## License
 
 MIT. See [`LICENSE`](LICENSE).
