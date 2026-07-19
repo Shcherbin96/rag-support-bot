@@ -30,7 +30,7 @@ The goal is not to make a chatbot that sounds confident. The goal is to make a s
 - **English Telegram UX** — `/start` and examples are written for an international reviewer.
 - **Telegram interface** — `aiogram` bot with timeout, concurrency limit, privacy-safer logging, and a controlled fallback message.
 - **Evaluation harness** — test-set based evaluation for grounded answers, refusals, small-talk, hallucination count, runtime/model errors, and per-case results.
-- **Hardened Docker image** — digest-pinned base and `uv`, `--frozen --no-dev` install, non-root runtime user, and CPU-only `torch` on Linux (the image dropped from 19.2GB to 5.44GB built / ~1.6GB shippable after that change). Built in CI on every PR.
+- **Hardened Docker image** — digest-pinned base and `uv`, `--frozen --no-dev` install, non-root runtime user, and CPU-only `torch` on Linux (the image dropped from 19.2GB to ~2.9GB after that change). Built in CI on every PR.
 
 ## Architecture
 
@@ -240,7 +240,7 @@ docker build -t rag-support-bot .
 docker run --env-file .env rag-support-bot
 ```
 
-The image builds the vector index during image build (so the running container never needs network access to start serving) and starts the Telegram bot at runtime. Hardening applied: a digest-pinned `python:3.12-slim` base and digest-pinned `uv` binary, `uv sync --frozen --no-dev` (lockfile-exact, no dev tooling in the runtime image), a non-root user, and CPU-only `torch` on Linux — routing off the CUDA-enabled torch stack (torch's bundled CUDA/cuDNN binaries plus the `nvidia-*` wheels) that PyPI's default Linux wheel pulls in for a CPU-inference workload dropped the built image from 19.2GB to ~5.4GB (~1.6GB shippable/registry footprint). CI builds this image on every PR (build-only, no push).
+The image builds the vector index during image build (so the running container never needs network access to start serving) and starts the Telegram bot at runtime. Hardening applied: a digest-pinned `python:3.12-slim` base and digest-pinned `uv` binary, `uv sync --frozen --no-dev` (lockfile-exact, no dev tooling in the runtime image), a non-root user, and CPU-only `torch` on Linux — routing off the CUDA-enabled torch stack (torch's bundled CUDA/cuDNN binaries plus the `nvidia-*` wheels) that PyPI's default Linux wheel pulls in for a CPU-inference workload dropped the built image from 19.2GB to ~2.9GB (`docker images` reports 2.86GB). CI builds this image on every PR (build-only, no push).
 
 ## Why this project matters
 
