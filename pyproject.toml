@@ -4,7 +4,7 @@ version = "1.0.0"
 description = "RAG-powered Telegram support assistant with citations, guardrails and eval"
 requires-python = ">=3.12"
 dependencies = [
-    "openai>=1.50",              # OpenAI-compatible client used with Gemini
+    "openai>=2.48.0",              # OpenAI-compatible client used with Gemini
     "chromadb>=0.5",             # local vector database for knowledge-base chunks
     "numpy>=1.26",               # cosine math in the semantic router
     "sentence-transformers>=3.0", # multilingual local embeddings
